@@ -159,10 +159,12 @@ const TreemapView = ({
     let parentNode = null;
 
     // Use settings colors if available
-    const defaultNodeColor = settings?.nodeColor || '#10B981';
-    const defaultEdgeColor = settings?.edgeColor || '#7C3AED';
-    const nodeTypeColors = settings?.nodeTypeColors || ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'];
-    const edgeTypeColors = settings?.edgeTypeColors || ['#7C3AED', '#EC4899', '#F97316', '#84CC16', '#6366F1', '#14B8A6'];
+    // Defaults: nodes blue, edges green shades
+    const defaultNodeColor = settings?.nodeColor || '#3B82F6'; // Blue
+    const defaultEdgeColor = settings?.edgeColor || '#22C55E'; // Green
+    const greenShades = settings?.edgeTypeColors || [
+      '#E3F9E5', '#C1F2C7', '#A7EFC5', '#86EFAC', '#4ADE80', '#22C55E', '#16A34A', '#15803D', '#166534'
+    ];
 
     if (currentView === 'nodeTypes') {
       data = nodeTypeSummary.map(item => ({
@@ -171,7 +173,8 @@ const TreemapView = ({
         id: item.type,
         label: item.type
       }));
-      colorScale = d3.scaleOrdinal(nodeTypeColors);
+      // All node type rectangles in blue
+      colorScale = () => defaultNodeColor;
     } else if (currentView === 'edgeTypes') {
       data = edgeTypeSummary.map(item => ({
         ...item,
@@ -179,7 +182,8 @@ const TreemapView = ({
         id: item.type,
         label: item.type
       }));
-      colorScale = d3.scaleOrdinal(edgeTypeColors);
+      // Edge type rectangles in varying green shades
+      colorScale = d3.scaleOrdinal(greenShades);
       
       // Add parent node representation
       parentNode = {
@@ -208,7 +212,8 @@ const TreemapView = ({
         nodes: nodes,
         type: 'nodeType'
       }));
-      colorScale = d3.scaleOrdinal(nodeTypeColors);
+      // Specific nodes are still node groups: keep blue
+      colorScale = () => defaultNodeColor;
       console.timeEnd('Node Grouping');
       
       // Add parent edge representation
@@ -271,8 +276,9 @@ const TreemapView = ({
         .attr('y', parentNode.y)
         .attr('width', parentNode.width)
         .attr('height', parentNode.height)
-        .attr('fill', defaultNodeColor)
-        .attr('stroke', d3.color(defaultNodeColor).darker(0.5))
+        // Parent represents a node in edgeTypes view (blue) and an edge context in specificNodes view (green)
+        .attr('fill', currentView === 'specificNodes' ? defaultEdgeColor : defaultNodeColor)
+        .attr('stroke', d3.color(currentView === 'specificNodes' ? defaultEdgeColor : defaultNodeColor).darker(0.5))
         .attr('stroke-width', 2)
         .attr('rx', 8)
         .style('cursor', 'pointer')
@@ -378,13 +384,15 @@ const TreemapView = ({
       .on('mouseover', function(event, d) {
         d3.select(this)
           .style('opacity', 1)
-          .style('filter', 'drop-shadow(0 6px 12px rgba(0, 0, 0, 0.18))')
-          .style('transform', 'scale(1.02)');
+          .style('filter', 'drop-shadow(0 6px 12px rgba(0, 0, 0, 0.18))');
         
         // Always show tooltip with full information
         const width = d.x1 - d.x0;
         const height = d.y1 - d.y0;
-        const [mouseX, mouseY] = d3.pointer(event, document.body);
+        // Position tooltip centered above the rect
+        const svgRect = svgRef.current?.getBoundingClientRect();
+        const centerX = (svgRect?.left || 0) + margin.left + d.x0 + width / 2;
+        const topY = (svgRect?.top || 0) + margin.top + d.y0; // top edge of rect
         
         // Create detailed tooltip content
         let content = `${d.data.value.toLocaleString()} ${currentView === 'nodeTypes' ? 'nodes' : currentView === 'edgeTypes' ? 'connections' : 'nodes'}`;
@@ -404,8 +412,8 @@ const TreemapView = ({
         
         setTooltip({
           show: true,
-          x: mouseX + 15,
-          y: mouseY - 10,
+          x: centerX,
+          y: topY - 8, // small gap above rect
           title: d.data.label,
           content: content
         });
@@ -413,8 +421,7 @@ const TreemapView = ({
       .on('mouseout', function(event, d) {
         d3.select(this)
           .style('opacity', 0.9)
-          .style('filter', 'drop-shadow(0 3px 6px rgba(0, 0, 0, 0.12))')
-          .style('transform', 'scale(1)');
+          .style('filter', 'drop-shadow(0 3px 6px rgba(0, 0, 0, 0.12))');
         setTooltip({ show: false, x: 0, y: 0, content: '', title: '' });
       })
       .on('click', function(event, d) {
@@ -636,7 +643,7 @@ const TreemapView = ({
       {tooltip.show && (
         <div
           className="fixed bg-gray-900 text-white px-3 py-2 rounded-lg text-sm z-50 pointer-events-none shadow-lg max-w-xs"
-          style={{ left: tooltip.x, top: tooltip.y }}
+          style={{ left: tooltip.x, top: tooltip.y, transform: 'translate(-50%, -100%)' }}
         >
           <div className="font-semibold">{tooltip.title}</div>
           <div className="text-gray-300 whitespace-pre-line">{tooltip.content}</div>

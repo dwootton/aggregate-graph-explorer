@@ -39,7 +39,40 @@ Instead, it will copy all the configuration files and the transitive dependencie
 
 You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
 
-## Learn More
+## Cypher Backend (Neo4j) [Optional]
+
+This project can compile its interactive graph queries to Cypher and run them against a Neo4j database.
+
+Setup steps:
+
+1) Install dependencies (adds `neo4j-driver`):
+
+   npm install
+
+2) Ingest the sample graph into Neo4j (requires a running DB and env vars):
+
+   export NEO4J_URI=bolt://localhost:7687
+   export NEO4J_USER=neo4j
+   export NEO4J_PASSWORD=your_password
+   npm run ingest:neo4j
+
+   This loads `public/MC1_graph.json` with labels = sanitized `Node Type` and relationship types = sanitized `Edge Type`.
+
+3) Enable the Cypher backend for the app by setting env vars before `npm start`:
+
+   export REACT_APP_USE_CYPHER_BACKEND=true
+   export REACT_APP_NEO4J_URI=$NEO4J_URI
+   export REACT_APP_NEO4J_USER=$NEO4J_USER
+   export REACT_APP_NEO4J_PASSWORD=$NEO4J_PASSWORD
+
+   The app will then:
+   - Compile path+filters to Cypher
+   - Use Neo4j to compute edge type summaries and connected nodes
+   - Use Neo4j for node type counts on the Node Types view
+
+Notes
+- If the Cypher backend is disabled or not configured, the app falls back to in‑memory JSON computations.
+- Labels and relationship types are sanitized to be Neo4j‑friendly (non-alphanumerics → `_`).
 
 You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
 

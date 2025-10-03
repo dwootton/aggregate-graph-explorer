@@ -5,6 +5,7 @@ import AttributePanel from './components/AttributePanel';
 import QueryBuilder from './components/QueryBuilder';
 import SavedQueries from './components/SavedQueries';
 import SettingsPanel from './components/SettingsPanel';
+import { CypherService } from './services/cypher';
 import {
   GraphData,
   GraphNode,
@@ -38,6 +39,11 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [isCalculating, setIsCalculating] = useState(false);
   const [calculationProgress, setCalculationProgress] = useState('');
+  // Cypher backend toggle and derived state
+  const cypherEnabled = useMemo(() => CypherService.isEnabled(), []);
+  const [edgeTypeSummaryCypher, setEdgeTypeSummaryCypher] = useState<EdgeTypeSummary[]>([]);
+  const [nodeTypeSummaryCypher, setNodeTypeSummaryCypher] = useState<NodeTypeSummary[]>([]);
+  const [currentEdgesCypher, setCurrentEdgesCypher] = useState<GraphLink[]>([]);
   // Derive New Attribute builder state
   const [deriveBuilder, setDeriveBuilder] = useState<{
     active: boolean;
@@ -148,6 +154,9 @@ function App() {
 
   // OPTIMIZED: Fast edge types calculation using index and caching
   const getConnectedEdgeTypes = useCallback((nodeType: string): EdgeTypeSummary[] => {
+    if (cypherEnabled) {
+      return edgeTypeSummaryCypher;
+    }
     if (!graphData || !graphData.links || !nodeType) return [];
     
     // Check cache FIRST - return immediately if found
@@ -233,7 +242,7 @@ function App() {
     console.timeEnd(`Edge Types for ${nodeType}`);
     
     return result as EdgeTypeSummary[];
-  }, [graphData, edgeIndex, edgeTypeCache, nodeMap]);
+  }, [cypherEnabled, edgeTypeSummaryCypher, graphData, edgeIndex, edgeTypeCache, nodeMap]);
 
   // NEW: Get connected edge types from a specific set of nodes (for filtering support)
   const getConnectedEdgeTypesFromNodes = useCallback((nodeType: string, specificNodes: GraphNode[]): EdgeTypeSummary[] => {
@@ -339,6 +348,58 @@ function App() {
       });
   }, []);
 
+  // Load edge type summary via Cypher when enabled
+  useEffect(() => {
+    const run = async () => {
+      if (!cypherEnabled) { setEdgeTypeSummaryCypher([]); return; }
+      if (currentView !== 'edgeTypes' || !selectedNodeType) { setEdgeTypeSummaryCypher([]); return; }
+      try {
+        const result = await CypherService.edgeTypesForNodeType(selectedNodeType, activeFilters);
+        setEdgeTypeSummaryCypher(result);
+      } catch (e) {
+        console.warn('Cypher edge type summary failed, falling back to in-memory', e);
+        setEdgeTypeSummaryCypher([]);
+      }
+    };
+    run();
+  }, [cypherEnabled, currentView, selectedNodeType, activeFilters]);
+
+  // Load node type summary via Cypher when enabled (nodeTypes view)
+  useEffect(() => {
+    const run = async () => {
+      if (!cypherEnabled) { setNodeTypeSummaryCypher([]); return; }
+      if (currentView !== 'nodeTypes') { setNodeTypeSummaryCypher([]); return; }
+      try {
+        const summary = await CypherService.nodeTypeSummary(currentQuery, activeFilters);
+        const mapped: NodeTypeSummary[] = summary.map(s => ({ type: s.type, count: s.count as number, examples: [] as GraphNode[] }));
+        setNodeTypeSummaryCypher(mapped);
+      } catch (e) {
+        console.warn('Cypher node type summary failed, falling back to in-memory', e);
+        setNodeTypeSummaryCypher([]);
+      }
+    };
+    run();
+  }, [cypherEnabled, currentView, currentQuery, activeFilters]);
+
+  // Load current edges via Cypher (specificNodes + selectedEdgeType)
+  useEffect(() => {
+    const run = async () => {
+      if (!cypherEnabled) { setCurrentEdgesCypher([]); return; }
+      if (currentView === 'specificNodes' && selectedEdgeType) {
+        try {
+          const edges = await CypherService.edgesByType(selectedEdgeType);
+          setCurrentEdgesCypher(edges);
+        } catch (e) {
+          console.warn('Cypher edgesByType failed', e);
+          setCurrentEdgesCypher([]);
+        }
+      } else {
+        setCurrentEdgesCypher([]);
+      }
+    };
+    run();
+  }, [cypherEnabled, currentView, selectedEdgeType]);
+
 
 
   // NEW: Filter application utilities (moved up to resolve declaration order)
@@ -435,6 +496,10 @@ function App() {
 
   // OPTIMIZED: Enhanced function to find nodes connected through edge type with cascading filter support
   const findConnectedNodes = useCallback((fromNodeType: string, edgeType: string, baseNodes: GraphNode[] | null = null) => {
+    if (cypherEnabled) {
+      // defer to cypher in click handler
+      return [] as GraphNode[];
+    }
     if (!graphData) return [];
     
     console.time(`Find Connected Nodes: ${fromNodeType} → ${edgeType}`);
@@ -479,7 +544,7 @@ function App() {
     console.timeEnd(`Find Connected Nodes: ${fromNodeType} → ${edgeType}`);
     
     return result;
-  }, [graphData, edgeIndex, applyCascadingFilters, currentQuery]);
+  }, [cypherEnabled, graphData, edgeIndex, applyCascadingFilters, currentQuery]);
 
      // Handle node type selection with context preservation
    const handleNodeTypeClick = useCallback((nodeType: string) => {
@@ -571,11 +636,25 @@ function App() {
      console.timeEnd(`Edge Type Click: ${edgeType}`);
        return;
      }
-     const connectedNodes = findConnectedNodes(selectedNodeType, edgeType, baseContext);
-     setFilteredNodes(connectedNodes);
+     if (cypherEnabled) {
+       // Use Cypher backend to load connected nodes asynchronously
+       (async () => {
+         try {
+           const nodes = await CypherService.connectedNodes([selectedNodeType, edgeType], activeFilters);
+           setFilteredNodes(nodes);
+         } catch (e) {
+           console.warn('Cypher connectedNodes failed, falling back to in-memory', e);
+           const connectedNodes = findConnectedNodes(selectedNodeType, edgeType, baseContext);
+           setFilteredNodes(connectedNodes);
+         }
+       })();
+     } else {
+       const connectedNodes = findConnectedNodes(selectedNodeType, edgeType, baseContext);
+       setFilteredNodes(connectedNodes);
+     }
      
      console.timeEnd(`Edge Type Click: ${edgeType}`);
-   }, [currentView, selectedNodeType, currentQuery, filteredNodes, findConnectedNodes]);
+   }, [cypherEnabled, currentView, selectedNodeType, currentQuery, filteredNodes, findConnectedNodes, activeFilters]);
 
      // Handle clicking on query pills for navigation
    const handleNavigateToQueryIndex = useCallback((clickedIndex: number) => {
@@ -596,33 +675,48 @@ function App() {
      } else if (targetQuery.length === 2) {
        // Navigate to specific nodes for this node type + edge type
        const [nodeType, edgeType] = targetQuery;
-       const connectedNodes = findConnectedNodes(nodeType, edgeType);
-       
        setSelectedNodeType(nodeType);
        setSelectedEdgeType(edgeType);
        setCurrentQuery([nodeType, edgeType]);
        setCurrentView('specificNodes');
-       setFilteredNodes(connectedNodes);
        setShowAttributesFor('edges'); // Show edge attributes when navigating to an edge
+       if (cypherEnabled) {
+         (async () => {
+           try {
+             const nodes = await CypherService.connectedNodes([nodeType, edgeType], activeFilters);
+             setFilteredNodes(nodes);
+           } catch (e) {
+             console.warn('Cypher connectedNodes failed in navigation; falling back', e);
+             const connectedNodes = findConnectedNodes(nodeType, edgeType);
+             setFilteredNodes(connectedNodes);
+           }
+         })();
+       } else {
+         const connectedNodes = findConnectedNodes(nodeType, edgeType);
+         setFilteredNodes(connectedNodes);
+       }
      }
      
      // Clear query history since we're jumping to a specific state
      setQueryHistory([]);
      
      console.timeEnd(`Query Navigation to Index ${clickedIndex}`);
-   }, [currentQuery, findConnectedNodes]);
+   }, [cypherEnabled, currentQuery, findConnectedNodes, activeFilters]);
 
      // Handle query reset
-   const resetQuery = useCallback(() => {
-     console.log('Resetting query to initial state');
-     setCurrentQuery([]);
-     setQueryHistory([]);
-     setSelectedNodeType(null);
-     setSelectedEdgeType(null);
-     setCurrentView('nodeTypes');
-     setFilteredNodes([]);
-     setShowAttributesFor('nodes'); // Default to showing node attributes
-   }, []);
+  const resetQuery = useCallback(() => {
+    console.log('Resetting query to initial state');
+    setCurrentQuery([]);
+    setQueryHistory([]);
+    setSelectedNodeType(null);
+    setSelectedEdgeType(null);
+    setCurrentView('nodeTypes');
+    setFilteredNodes([]);
+    setShowAttributesFor('nodes'); // Default to showing node attributes
+    // Also clear all filters so future navigation starts clean
+    setActiveFilters({ nodeFilters: [], edgeFilters: [] });
+    setPendingFilters({ nodeFilters: [], edgeFilters: [] });
+  }, []);
 
    // Handle back navigation
    const handleBackClick = useCallback(() => {
@@ -745,7 +839,8 @@ function App() {
   // OPTIMIZED: Memoized edge types with cascading filter support (moved after applyFiltersToNodes)
   const memoizedEdgeTypes = useMemo(() => {
     if (currentView !== 'edgeTypes' || !selectedNodeType) return [];
-    
+    if (cypherEnabled) return edgeTypeSummaryCypher;
+
     // Get nodes of the selected type and apply cascading filters
     let targetNodes = graphData?.nodes?.filter(node => node['Node Type'] === selectedNodeType) || [];
     targetNodes = applyCascadingFilters(targetNodes, currentQuery);
@@ -754,10 +849,13 @@ function App() {
     
     // Use a modified version that works with specific nodes
     return getConnectedEdgeTypesFromNodes(selectedNodeType, targetNodes);
-  }, [currentView, selectedNodeType, graphData, applyCascadingFilters, currentQuery, getConnectedEdgeTypesFromNodes]);
+  }, [cypherEnabled, edgeTypeSummaryCypher, currentView, selectedNodeType, graphData, applyCascadingFilters, currentQuery, getConnectedEdgeTypesFromNodes]);
 
   // Memoized node type summary with cascading filter support (moved after applyFiltersToNodes)
   const nodeTypeSummary = useMemo(() => {
+    if (cypherEnabled && currentView === 'nodeTypes') {
+      return nodeTypeSummaryCypher;
+    }
     if (!graphData || !graphData.nodes) return [];
     
     console.time('Node Type Summary Calculation');
@@ -765,6 +863,42 @@ function App() {
     
     // Apply cascading filters through the entire query path for treemap view
     let filteredNodes = applyCascadingFilters(graphData.nodes, currentQuery);
+    // Apply root per-type filters at root
+    if (currentView === 'nodeTypes') {
+      const byType = new Map<string, Filter[]>();
+      activeFilters.nodeFilters.forEach((f: Filter) => {
+        if (f.queryStep === -1 && f.queryContext) {
+          if (!byType.has(f.queryContext)) byType.set(f.queryContext, []);
+          byType.get(f.queryContext)!.push(f);
+        }
+      });
+      if (byType.size > 0) {
+        filteredNodes = filteredNodes.filter((n: GraphNode) => {
+          const t = n['Node Type'];
+          const filters = byType.get(t);
+          if (!filters || filters.length === 0) return true;
+          return filters.every((filter: Filter) => {
+            const value = (n as any)[filter.attribute];
+            switch (filter.type) {
+              case 'range': {
+                const numValue = parseFloat(String(value));
+                return !isNaN(numValue) && numValue >= (filter.min ?? numValue) && numValue <= (filter.max ?? numValue);
+              }
+              case 'categorical':
+                return (filter.values ?? []).includes(String(value));
+              case 'search':
+                return String(value ?? '').toLowerCase().includes(String(filter.value ?? '').toLowerCase());
+              case 'date_range': {
+                const dateValue = new Date(String(value));
+                return (!!filter.startDate ? dateValue >= filter.startDate : true) && (!!filter.endDate ? dateValue <= filter.endDate : true);
+              }
+              default:
+                return true;
+            }
+          });
+        });
+      }
+    }
     
     const nodeTypeCounts: Record<string, number> = {};
     const nodeTypeExamples: Record<string, GraphNode[]> = {};
@@ -797,7 +931,7 @@ function App() {
     console.timeEnd('Node Type Summary Calculation');
     
     return result;
-  }, [graphData, applyCascadingFilters, currentQuery]);
+  }, [cypherEnabled, nodeTypeSummaryCypher, currentView, graphData, applyCascadingFilters, currentQuery, activeFilters.nodeFilters]);
 
   // NEW: Add/Update/Remove filter functions with query step context
   const addPendingFilter = useCallback((type: keyof PendingFilters, filter: Partial<Filter> | null) => {
@@ -809,10 +943,11 @@ function App() {
     const currentQueryStep = currentQuery.length - 1; // Current step index
     const currentQueryContext = currentQuery[currentQueryStep]; // Current node/edge type
     
+    // Allow overrides (used by root partition mode)
     const scopedFilter: Filter = {
       ...(filter as Filter),
-      queryStep: currentQueryStep,
-      queryContext: currentQueryContext || 'root'
+      queryStep: (filter as any).queryStep !== undefined ? (filter as any).queryStep as number : currentQueryStep,
+      queryContext: (filter as any).queryContext !== undefined ? (filter as any).queryContext as string : (currentQueryContext || 'root')
     };
     
     console.log(`Adding scoped pending ${type} filter:`, scopedFilter);
@@ -822,14 +957,15 @@ function App() {
     }));
   }, [currentQuery]);
 
-  const removePendingFilter = useCallback((type: keyof PendingFilters, attribute: string, queryStep: number | null = null) => {
-    console.log(`Removing pending ${type} filter: ${attribute} (step: ${queryStep})`);
+  const removePendingFilter = useCallback((type: keyof PendingFilters, attribute: string, queryStep: number | null = null, queryContext: string | null = null) => {
+    console.log(`Removing pending ${type} filter: ${attribute} (step: ${queryStep}, context: ${queryContext})`);
     setPendingFilters((prev: PendingFilters) => ({
       ...prev,
       [type]: (prev[type] as Filter[]).filter((f: Filter) => {
         if (queryStep !== null) {
-          // Remove filter with specific attribute and query step
-          return !(f.attribute === attribute && f.queryStep === queryStep);
+          // Remove filter with specific attribute and query step (and optionally context)
+          const match = f.attribute === attribute && f.queryStep === queryStep && (queryContext ? f.queryContext === queryContext : true);
+          return !match;
         } else {
           // Remove all filters with this attribute (legacy behavior)
           return f.attribute !== attribute;
@@ -864,14 +1000,15 @@ function App() {
    }, []);
 
    // NEW: Remove specific active filter by attribute and query step (for deletion from query pills)
-   const removeActiveFilter = useCallback((type: keyof ActiveFilters, attribute: string, queryStep: number | null = null) => {
-     console.log(`Removing active ${type} filter: ${attribute} (step: ${queryStep})`);
+  const removeActiveFilter = useCallback((type: keyof ActiveFilters, attribute: string, queryStep: number | null = null, queryContext: string | null = null) => {
+     console.log(`Removing active ${type} filter: ${attribute} (step: ${queryStep}, context: ${queryContext})`);
     setActiveFilters((prev: ActiveFilters) => ({
       ...prev,
       [type]: (prev[type] as Filter[]).filter((f: Filter) => {
         if (queryStep !== null) {
-          // Remove filter with specific attribute and query step
-          return !(f.attribute === attribute && f.queryStep === queryStep);
+          // Remove filter with specific attribute and query step (and optionally context)
+          const match = f.attribute === attribute && f.queryStep === queryStep && (queryContext ? f.queryContext === queryContext : true);
+          return !match;
         } else {
           // Remove all filters with this attribute (legacy behavior)
           return f.attribute !== attribute;
@@ -904,11 +1041,48 @@ function App() {
     
     // Apply cascading filters through the entire query path
     result = applyCascadingFilters(result, currentQuery);
+    // Apply root per-type filters at the root view
+    if (currentView === 'nodeTypes') {
+      // Group filters by type (queryStep -1)
+      const byType = new Map<string, Filter[]>();
+      activeFilters.nodeFilters.forEach((f: Filter) => {
+        if (f.queryStep === -1 && f.queryContext) {
+          if (!byType.has(f.queryContext)) byType.set(f.queryContext, []);
+          byType.get(f.queryContext)!.push(f);
+        }
+      });
+      if (byType.size > 0) {
+        result = result.filter((n: GraphNode) => {
+          const t = n['Node Type'];
+          const filters = byType.get(t);
+          if (!filters || filters.length === 0) return true;
+          return filters.every((filter: Filter) => {
+            const value = (n as any)[filter.attribute];
+            switch (filter.type) {
+              case 'range': {
+                const numValue = parseFloat(String(value));
+                return !isNaN(numValue) && numValue >= (filter.min ?? numValue) && numValue <= (filter.max ?? numValue);
+              }
+              case 'categorical':
+                return (filter.values ?? []).includes(String(value));
+              case 'search':
+                return String(value ?? '').toLowerCase().includes(String(filter.value ?? '').toLowerCase());
+              case 'date_range': {
+                const dateValue = new Date(String(value));
+                return (!!filter.startDate ? dateValue >= filter.startDate : true) && (!!filter.endDate ? dateValue <= filter.endDate : true);
+              }
+              default:
+                return true;
+            }
+          });
+        });
+      }
+    }
     
     console.log(`Current nodes count: ${result.length} (after cascading filters through ${currentQuery.length} query steps)`);
     console.timeEnd('Get Current Nodes');
     return result;
-  }, [currentView, selectedNodeType, filteredNodes, graphData, applyCascadingFilters, currentQuery]);
+  }, [currentView, selectedNodeType, filteredNodes, graphData, applyCascadingFilters, currentQuery, activeFilters.nodeFilters]);
 
   // OPTIMIZED: Get current edges using index with cascading filter support
   const getCurrentEdges = useMemo<GraphLink[]>(() => {
@@ -941,7 +1115,11 @@ function App() {
       
       result = Array.from(edgeSet);
     } else if (currentView === 'specificNodes' && selectedEdgeType) {
-      result = graphData.links.filter(link => link['Edge Type'] === selectedEdgeType);
+      if (cypherEnabled) {
+        result = currentEdgesCypher;
+      } else {
+        result = graphData.links.filter(link => link['Edge Type'] === selectedEdgeType);
+      }
     } else {
       result = graphData.links;
     }
@@ -958,7 +1136,7 @@ function App() {
     console.log(`Current edges count: ${result.length} (after cascading node filters + ${relevantFilters.length} edge filters)`);
     console.timeEnd('Get Current Edges');
     return result;
-  }, [currentView, selectedNodeType, selectedEdgeType, graphData, edgeIndex, activeFilters.edgeFilters, applyFiltersToEdges, applyCascadingFilters, currentQuery]);
+  }, [cypherEnabled, currentEdgesCypher, currentView, selectedNodeType, selectedEdgeType, graphData, edgeIndex, activeFilters.edgeFilters, applyFiltersToEdges, applyCascadingFilters, currentQuery]);
 
   // Get context-aware attribute title
   const getAttributeTitle = useCallback(() => {
@@ -1165,6 +1343,7 @@ function App() {
                 allPendingFilters={pendingFilters}
                 onFinalize={finalizeAllFilters}
                 onClearAll={clearAllPendingFilters}
+                partitionByNodeType={currentView === 'nodeTypes'}
               />
             ) : (
               // Edge Attributes Panel

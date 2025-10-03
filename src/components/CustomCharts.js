@@ -7,6 +7,7 @@ export const CustomHistogram = ({
   attribute, 
   onBrushChange, 
   currentFilter,
+  theme = 'blue',
   width = 280,
   height = 120,
   marginTop = 10,
@@ -90,9 +91,9 @@ export const CustomHistogram = ({
               y={yScale(bin.length)}
               width={Math.max(0, xScale(bin.x1) - xScale(bin.x0) - 1)}
               height={innerHeight - yScale(bin.length)}
-              fill="#3B82F6"
+              fill={theme === 'green' ? '#10B981' : '#3B82F6'}
               fillOpacity={0.7}
-              stroke="#2563EB"
+              stroke={theme === 'green' ? '#059669' : '#2563EB'}
               strokeWidth={0.5}
             />
           ))}
@@ -161,6 +162,7 @@ export const CustomBarChart = ({
   attribute, 
   onBarClick,
   currentFilter,
+  theme = 'blue',
   width = 280,
   height = 120,
   marginTop = 10,
@@ -206,6 +208,10 @@ export const CustomBarChart = ({
           {/* Bars */}
           {barData.map(([value, count]) => {
             const isSelected = selectedValues.includes(value);
+            const base = theme === 'green' ? '#10B981' : '#3B82F6';
+            const baseStroke = theme === 'green' ? '#059669' : '#2563EB';
+            const fillColor = isSelected ? base : base;
+            const strokeColor = isSelected ? baseStroke : baseStroke;
             return (
               <rect
                 key={value}
@@ -213,9 +219,9 @@ export const CustomBarChart = ({
                 y={yScale(count)}
                 width={xScale.bandwidth()}
                 height={innerHeight - yScale(count)}
-                fill={isSelected ? "#10B981" : "#6B7280"}
+                fill={fillColor}
                 fillOpacity={0.8}
-                stroke={isSelected ? "#059669" : "#4B5563"}
+                stroke={strokeColor}
                 strokeWidth={1}
                 className="cursor-pointer transition-all duration-200 hover:opacity-100"
                 onClick={() => onBarClick && onBarClick(value)}

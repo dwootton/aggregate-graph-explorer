@@ -6,7 +6,7 @@ import { GraphData, GraphNode, GraphLink, Filter, PendingFilters } from '../type
 type OverlayProps = {
   pendingFilters: PendingFilters;
   onFinalize: () => void;
-  onRemoveFilter: (type: 'nodeFilters' | 'edgeFilters', attribute: string, queryStep?: number | null) => void;
+  onRemoveFilter: (type: 'nodeFilters' | 'edgeFilters', attribute: string, queryStep?: number | null, queryContext?: string | null) => void;
   onClearAll: () => void;
 };
 
@@ -42,11 +42,7 @@ const PendingFiltersOverlay: React.FC<OverlayProps> = ({ pendingFilters, onFinal
   return (
     <div className="absolute inset-x-0 top-0 z-10 bg-yellow-50 border-l-4 border-yellow-400 p-3 m-4 rounded-lg shadow-lg">
       <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center">
-          <h3 className="text-sm font-medium text-yellow-800">
-            ⏳ Adding to Query ({totalPending} pending filters)
-          </h3>
-        </div>
+        
         <div className="flex items-center gap-2">
           <button
             onClick={onFinalize}
@@ -75,7 +71,7 @@ const PendingFiltersOverlay: React.FC<OverlayProps> = ({ pendingFilters, onFinal
                   <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
                   <span>{getFilterDisplayText(filter)}</span>
                   <button
-                    onClick={() => onRemoveFilter('nodeFilters', filter.attribute, filter.queryStep)}
+                    onClick={() => onRemoveFilter('nodeFilters', filter.attribute, filter.queryStep, filter.queryContext)}
                     className="ml-1 text-red-500 hover:text-red-700"
                   >
                     ×
@@ -95,7 +91,7 @@ const PendingFiltersOverlay: React.FC<OverlayProps> = ({ pendingFilters, onFinal
                   <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
                   <span>{getFilterDisplayText(filter)}</span>
                   <button
-                    onClick={() => onRemoveFilter('edgeFilters', filter.attribute, filter.queryStep)}
+                    onClick={() => onRemoveFilter('edgeFilters', filter.attribute, filter.queryStep, filter.queryContext)}
                     className="ml-1 text-red-500 hover:text-red-700"
                   >
                     ×
@@ -128,11 +124,13 @@ type AttributePanelProps = {
   filterType: 'nodeFilters' | 'edgeFilters';
   pendingFilters: Filter[];
   onAddFilter: (type: 'nodeFilters' | 'edgeFilters', filter: Partial<Filter> | null) => void;
-  onRemoveFilter: (type: 'nodeFilters' | 'edgeFilters', attribute: string, queryStep?: number | null) => void;
+  onRemoveFilter: (type: 'nodeFilters' | 'edgeFilters', attribute: string, queryStep?: number | null, queryContext?: string | null) => void;
   onSaveFilters: (type: 'nodeFilters' | 'edgeFilters') => void;
   allPendingFilters: PendingFilters;
   onFinalize: () => void;
   onClearAll: () => void;
+  partitionByNodeType?: boolean;
+  theme?: 'blue' | 'green';
 };
 
 const AttributePanel: React.FC<AttributePanelProps> = ({ 
@@ -146,24 +144,26 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
   onSaveFilters,
   allPendingFilters,
   onFinalize,
-  onClearAll
+  onClearAll,
+  partitionByNodeType = false,
+  theme = 'blue'
 }) => {
   usePerformanceMonitor(`Rendering AttributePanel: ${title}`);
   
   const [localFilters, setLocalFilters] = useState<Map<string, Filter | null>>(new Map());
 
-  // Memoized attribute analysis for performance
-  const attributes = useMemo<any[]>(() => {
-    console.time(`Attribute Analysis: ${title}`);
-    if (!currentNodes || !graphData) {
-      console.timeEnd(`Attribute Analysis: ${title}`);
-      return [];
+  // Helper: analyze attributes for a given dataset
+  const analyzeAttributes = (dataset: (GraphNode | GraphLink)[], label: string) => {
+    console.time(`Attribute Analysis: ${title} [${label}]`);
+    if (!dataset || !graphData) {
+      console.timeEnd(`Attribute Analysis: ${title} [${label}]`);
+      return [] as any[];
     }
 
     type AttrAgg = { name: string; values: any[]; types: Set<string>; uniqueValues: Set<any>; nullCount: number };
     const nodeAttributes: Record<string, AttrAgg> = {};
     
-    (currentNodes as (GraphNode | GraphLink)[]).forEach((node) => {
+    dataset.forEach((node) => {
       Object.entries(node as any).forEach(([key, value]) => {
         if (key === 'id') return;
         
@@ -229,6 +229,18 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
       };
     });
 
+    console.timeEnd(`Attribute Analysis: ${title} [${label}]`);
+    return result;
+  };
+
+  // Memoized attribute analysis for performance
+  const attributes = useMemo<any[]>(() => {
+    console.time(`Attribute Analysis: ${title}`);
+    if (!currentNodes || !graphData) {
+      console.timeEnd(`Attribute Analysis: ${title}`);
+      return [];
+    }
+    const result = analyzeAttributes(currentNodes as (GraphNode | GraphLink)[], 'all');
     console.log(`Attribute analysis completed for ${title}:`, result.map(r => r.name));
     console.timeEnd(`Attribute Analysis: ${title}`);
     return result;
@@ -266,6 +278,116 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">{title}</h3>
         <p className="text-gray-500 text-center">No data available</p>
+      </div>
+    );
+  }
+
+  // Partitioned rendering by node type (applicable when showing node attributes at root)
+  if (partitionByNodeType) {
+    const groups = useMemo(() => {
+      const map = new Map<string, GraphNode[]>();
+      (currentNodes as GraphNode[]).forEach((n) => {
+        const t = String((n as any)['Node Type'] || 'Unknown');
+        if (!map.has(t)) map.set(t, []);
+        map.get(t)!.push(n);
+      });
+      return map;
+    }, [currentNodes]);
+
+    return (
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 relative">
+        <PendingFiltersOverlay 
+          pendingFilters={allPendingFilters}
+          onFinalize={onFinalize}
+          onRemoveFilter={onRemoveFilter}
+          onClearAll={onClearAll}
+        />
+        <div className="p-4 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          <p className="text-sm text-gray-600 mt-1">{(currentNodes as any[]).length.toLocaleString()} total nodes • Partitioned by Node Type</p>
+        </div>
+        <div className="p-4 space-y-8">
+          {Array.from(groups.entries()).map(([type, nodes]) => {
+            const attrs = analyzeAttributes(nodes, type);
+            const handleChange = (filter: any) => {
+              if (filter) {
+                (filter as any).queryStep = -1;
+                (filter as any).queryContext = type;
+              }
+              handleFilterChange('nodeFilters', filter);
+            };
+            return (
+              <div key={type} className="border rounded-md">
+                <div className="px-3 py-2 bg-gray-50 border-b flex items-center justify-between">
+                  <div className="text-sm font-medium text-gray-900">{type}</div>
+                  <div className="text-xs text-gray-600">{nodes.length.toLocaleString()} nodes • {attrs.length} attributes</div>
+                </div>
+                <div className="p-3 space-y-6">
+                  {attrs.map((attribute: any) => (
+                    <div key={attribute.name} className="border-b border-gray-100 pb-4 last:border-b-0">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-sm font-medium text-gray-900">{attribute.name}</h4>
+                        <div className="text-xs text-gray-500">{attribute.cardinality} unique</div>
+                      </div>
+                      {attribute.isNumeric ? (
+                        <div className="space-y-3">
+                          <CustomHistogram
+                            data={nodes}
+                            attribute={attribute}
+                            onBrushChange={(f: any) => handleChange(f as Filter)}
+                            currentFilter={localFilters.get(attribute.name)}
+                            theme={'blue'}
+                          />
+                          <div className="text-xs text-gray-600">
+                            Range: {attribute.min?.toLocaleString()} - {attribute.max?.toLocaleString()}
+                            {attribute.mean && ` • Avg: ${attribute.mean.toFixed(2)}`}
+                          </div>
+                        </div>
+                      ) : attribute.isHighCardinality ? (
+                        <div className="space-y-2">
+                          <CustomSearch
+                            data={nodes}
+                            attribute={attribute}
+                            onSelectionChange={(f: any) => handleChange(f as Filter)}
+                            currentFilter={localFilters.get(attribute.name)}
+                          />
+                          <div className="text-xs text-gray-600">
+                            {attribute.cardinality} unique values • {attribute.completeness}% complete
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <CustomBarChart
+                            data={nodes}
+                            attribute={attribute}
+                            onBarClick={(value: string) => {
+                              const currentFilter = localFilters.get(attribute.name);
+                              const currentValues = currentFilter?.values || [];
+                              let newValues;
+                              if ((currentValues as string[]).includes(value)) newValues = (currentValues as string[]).filter((v: string) => v !== value);
+                              else newValues = [...(currentValues as string[]), value];
+                              const filter = newValues.length > 0 ? ({ type: 'categorical' as const, attribute: attribute.name as string, values: newValues as string[] }) : null;
+                              handleChange(filter);
+                            }}
+                            currentFilter={localFilters.get(attribute.name)}
+                            theme={'blue'}
+                          />
+                          <div className="text-xs text-gray-600">Click bars to filter • {attribute.completeness}% complete</div>
+                        </div>
+                      )}
+                      {localFilters.has(attribute.name) && (
+                        <div className="mt-2 text-xs text-green-600 bg-green-50 px-2 py-1 rounded flex items-center">
+                          <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                          <span>Added to pending filters</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     );
   }
@@ -314,6 +436,7 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
                   attribute={attribute}
                   onBrushChange={(filter: any) => handleFilterChange(filterType, filter as Filter)}
                   currentFilter={localFilters.get(attribute.name)}
+                  theme={filterType === 'edgeFilters' ? 'green' : 'blue'}
                 />
                 <div className="text-xs text-gray-600">
                   Range: {attribute.min?.toLocaleString()} - {attribute.max?.toLocaleString()}
@@ -357,6 +480,7 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
                     handleFilterChange(filterType, filter);
                   }}
                   currentFilter={localFilters.get(attribute.name)}
+                  theme={filterType === 'edgeFilters' ? 'green' : 'blue'}
                 />
                 <div className="text-xs text-gray-600">
                   Click bars to filter • {attribute.completeness}% complete

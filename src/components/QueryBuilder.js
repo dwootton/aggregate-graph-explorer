@@ -8,7 +8,7 @@ import React, { useState } from 'react';
 
 // Nested Query Step with Expandable Filters Component
 /**
- * @param {{ step: string, index: number, activeFilters: ActiveFilters, onClick: ()=>void, onRemove: ()=>void, onRemoveFilter: (type: 'nodeFilters'|'edgeFilters', attribute: string, queryStep?: number|null)=>void }} props
+ * @param {{ step: string, index: number, activeFilters: ActiveFilters, onClick: ()=>void, onRemove: ()=>void, onRemoveFilter: (type: 'nodeFilters'|'edgeFilters', attribute: string, queryStep?: number|null, queryContext?: string|null)=>void }} props
  */
 const QueryStepWithFilters = ({ step, index, activeFilters, onClick, onRemove, onRemoveFilter }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -23,9 +23,10 @@ const QueryStepWithFilters = ({ step, index, activeFilters, onClick, onRemove, o
   const isNodeStep = index % 2 === 0;
   const filterType = isNodeStep ? 'nodeFilters' : 'edgeFilters';
 
+  // Color code query path: nodes (even steps) = blue, edges (odd steps) = green
   const stepColor = isNodeStep 
-    ? 'bg-green-50 border-green-300 text-green-800 hover:bg-green-100' 
-    : 'bg-blue-50 border-blue-300 text-blue-800 hover:bg-blue-100';
+    ? 'bg-blue-50 border-blue-300 text-blue-800 hover:bg-blue-100' 
+    : 'bg-green-50 border-green-300 text-green-800 hover:bg-green-100';
     
   const hasFilters = relevantFilters.length > 0;
 
@@ -102,9 +103,9 @@ const QueryStepWithFilters = ({ step, index, activeFilters, onClick, onRemove, o
                     {getFilterDisplayText(filter)}
                   </span>
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onRemoveFilter(filterType, filter.attribute, filter.queryStep);
+                      onClick={(e) => {
+                        e.stopPropagation();
+                      onRemoveFilter(filterType, filter.attribute, filter.queryStep, filter.queryContext);
                     }}
                     className="ml-2 p-0.5 rounded text-red-500 hover:text-red-700 hover:bg-red-50 transition-colors"
                     title="Remove filter"
