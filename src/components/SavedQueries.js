@@ -35,13 +35,13 @@ const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => 
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-xl border border-gray-200 max-h-[80vh] flex flex-col">
+    <div className="bg-white rounded shadow-sm border border-vercel-border max-h-[80vh] flex flex-col">
       {/* Header */}
-      <div className="flex justify-between items-center p-4 border-b border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900">Saved Queries</h3>
+      <div className="flex justify-between items-center p-4 border-b border-vercel-border">
+        <h3 className="text-sm font-mono font-semibold text-vercel-black">Saved Queries</h3>
         <button
           onClick={onClose}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
+          className="text-vercel-gray hover:text-vercel-black transition-colors"
           title="Close panel"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -54,30 +54,30 @@ const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => 
       <div className="flex-1 overflow-hidden flex flex-col">
         {savedQueries.length === 0 ? (
           <div className="flex-1 flex items-center justify-center p-8">
-            <div className="text-center text-gray-500">
-              <div className="text-lg mb-2">No saved queries</div>
-              <div className="text-sm">Save a query to see it here</div>
+            <div className="text-center text-vercel-gray">
+              <div className="text-sm font-mono mb-2">No saved queries</div>
+              <div className="text-xs font-mono">Save a query to see it here</div>
             </div>
           </div>
         ) : (
           <>
             {/* Query List Header */}
-            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+            <div className="px-4 py-3 border-b border-vercel-border bg-vercel-bg">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
                     checked={selectedQueries.size === savedQueries.length && savedQueries.length > 0}
                     onChange={handleSelectAll}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="rounded border-vercel-border text-vercel-black focus:ring-vercel-black"
                   />
-                  <span className="text-sm font-medium text-gray-700">
+                  <span className="text-xs font-mono text-vercel-black">
                     {selectedQueries.size > 0 ? `${selectedQueries.size} selected` : 'Select queries'}
                   </span>
                 </div>
                 <button
                   onClick={() => setShowOperations(!showOperations)}
-                  className="text-sm text-blue-600 hover:text-blue-800 transition-colors"
+                  className="text-xs font-mono text-vercel-black hover:text-vercel-gray transition-colors">
                 >
                   Operations {showOperations ? '▼' : '▶'}
                 </button>
@@ -86,13 +86,13 @@ const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => 
 
             {/* Operations Panel */}
             {showOperations && (
-              <div className="px-4 py-3 border-b border-gray-100 bg-blue-50">
-                <div className="text-xs text-blue-700 mb-2">Graph Operations:</div>
+              <div className="px-4 py-3 border-b border-vercel-border bg-vercel-bg">
+                <div className="text-xs font-mono text-vercel-black mb-2">Graph Operations:</div>
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => handleOperation('union')}
                     disabled={selectedQueries.size < 2}
-                    className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50 transition-colors"
+                    className="px-2 py-1 text-xs font-mono bg-white border border-vercel-border text-vercel-black rounded hover:bg-vercel-bg disabled:opacity-30 transition-colors"
                     title="Combine all selected queries"
                   >
                     ∪ Union
@@ -100,7 +100,7 @@ const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => 
                   <button
                     onClick={() => handleOperation('intersect')}
                     disabled={selectedQueries.size < 2}
-                    className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 disabled:opacity-50 transition-colors"
+                    className="px-2 py-1 text-xs font-mono bg-white border border-vercel-border text-vercel-black rounded hover:bg-vercel-bg disabled:opacity-30 transition-colors"
                     title="Find common elements in selected queries"
                   >
                     ∩ Intersect
@@ -108,7 +108,7 @@ const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => 
                   <button
                     onClick={() => handleOperation('subtract')}
                     disabled={selectedQueries.size < 2}
-                    className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50 transition-colors"
+                    className="px-2 py-1 text-xs font-mono bg-white border border-vercel-border text-vercel-black rounded hover:bg-vercel-bg disabled:opacity-30 transition-colors"
                     title="Remove second query from first"
                   >
                     − Subtract
@@ -116,7 +116,7 @@ const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => 
                   <button
                     onClick={() => handleOperation('connect')}
                     disabled={selectedQueries.size < 1}
-                    className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200 disabled:opacity-50 transition-colors"
+                    className="px-2 py-1 text-xs font-mono bg-white border border-vercel-border text-vercel-black rounded hover:bg-vercel-bg disabled:opacity-30 transition-colors"
                     title="Find connections between queries"
                   >
                     ⟷ Connect
@@ -131,10 +131,10 @@ const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => 
                 {savedQueries.map((query) => (
                   <div
                     key={query.id}
-                    className={`border rounded-lg p-3 transition-all ${
+                    className={`border rounded p-3 transition-all ${
                       selectedQueries.has(query.id)
-                        ? 'border-blue-300 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                        ? 'border-vercel-black bg-vercel-bg'
+                        : 'border-vercel-border hover:border-vercel-gray hover:bg-vercel-bg'
                     }`}
                   >
                     <div className="flex items-start gap-3">
@@ -142,15 +142,15 @@ const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => 
                         type="checkbox"
                         checked={selectedQueries.has(query.id)}
                         onChange={() => handleQuerySelect(query.id)}
-                        className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        className="mt-1 rounded border-vercel-border text-vercel-black focus:ring-vercel-black"
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
-                          <h4 className="font-medium text-gray-900 truncate">{query.name}</h4>
+                          <h4 className="font-mono font-medium text-xs text-vercel-black truncate">{query.name}</h4>
                           <div className="flex items-center gap-1 ml-2">
                             <button
                               onClick={() => onLoadQuery(query)}
-                              className="text-blue-600 hover:text-blue-800 transition-colors"
+                              className="text-vercel-black hover:text-vercel-gray transition-colors"
                               title="Load this query"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -159,7 +159,7 @@ const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => 
                             </button>
                             <button
                               onClick={() => onDeleteQuery(query.id)}
-                              className="text-red-600 hover:text-red-800 transition-colors"
+                              className="text-vercel-gray hover:text-vercel-black transition-colors"
                               title="Delete this query"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -170,18 +170,18 @@ const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => 
                         </div>
                         
                         <div className="mt-1">
-                          <div className="text-sm text-gray-600 font-mono bg-gray-100 px-2 py-1 rounded">
+                          <div className="text-xs font-mono text-vercel-black bg-vercel-bg px-2 py-1 rounded border border-vercel-border">
                             {query.query.join(' → ')}
                           </div>
                         </div>
                         
                         {query.notes && (
-                          <div className="mt-2 text-sm text-gray-600">
+                          <div className="mt-2 text-xs font-mono text-vercel-gray">
                             {query.notes}
                           </div>
                         )}
                         
-                        <div className="mt-2 text-xs text-gray-400">
+                        <div className="mt-2 text-xs font-mono text-vercel-light-gray">
                           Saved {new Date(query.timestamp).toLocaleDateString()}
                         </div>
                       </div>
@@ -195,11 +195,11 @@ const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => 
       </div>
 
       {/* Footer */}
-      <div className="border-t border-gray-200 px-4 py-3 bg-gray-50">
-        <div className="flex justify-between items-center text-sm text-gray-600">
+      <div className="border-t border-vercel-border px-4 py-3 bg-vercel-bg">
+        <div className="flex justify-between items-center text-xs font-mono text-vercel-gray">
           <span>{savedQueries.length} saved queries</span>
           {selectedQueries.size > 0 && (
-            <span className="text-blue-600">{selectedQueries.size} selected</span>
+            <span className="text-vercel-black font-mono">{selectedQueries.size} selected</span>
           )}
         </div>
       </div>

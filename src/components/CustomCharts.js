@@ -81,7 +81,7 @@ export const CustomHistogram = ({
   
   return (
     <div className="relative">
-      <svg ref={svgRef} width={width} height={height} className="border border-gray-200 rounded">
+      <svg ref={svgRef} width={width} height={height} className="border border-vercel-border rounded">
         <g transform={`translate(${marginLeft},${marginTop})`}>
           {/* Bars */}
           {bins.map((bin, i) => (
@@ -91,10 +91,10 @@ export const CustomHistogram = ({
               y={yScale(bin.length)}
               width={Math.max(0, xScale(bin.x1) - xScale(bin.x0) - 1)}
               height={innerHeight - yScale(bin.length)}
-              fill={theme === 'green' ? '#10B981' : '#3B82F6'}
-              fillOpacity={0.7}
-              stroke={theme === 'green' ? '#059669' : '#2563EB'}
-              strokeWidth={0.5}
+              fill={theme === 'green' ? '#f5f5f5' : '#000000'}
+              fillOpacity={1}
+              stroke={theme === 'green' ? '#000000' : '#000000'}
+              strokeWidth={theme === 'green' ? 1.5 : 0.5}
             />
           ))}
           
@@ -107,6 +107,7 @@ export const CustomHistogram = ({
                   y="20"
                   textAnchor="middle"
                   fontSize="10"
+                  fontFamily="SF Mono, Monaco, Inconsolata, Courier New, monospace"
                   fill="currentColor"
                 >
                   {d3.format('.2s')(tick)}
@@ -125,6 +126,7 @@ export const CustomHistogram = ({
                   textAnchor="end"
                   dominantBaseline="middle"
                   fontSize="10"
+                  fontFamily="SF Mono, Monaco, Inconsolata, Courier New, monospace"
                   fill="currentColor"
                 >
                   {tick}
@@ -203,13 +205,13 @@ export const CustomBarChart = ({
   
   return (
     <div className="relative">
-      <svg width={width} height={height} className="border border-gray-200 rounded">
+      <svg width={width} height={height} className="border border-vercel-border rounded">
         <g transform={`translate(${marginLeft},${marginTop})`}>
           {/* Bars */}
           {barData.map(([value, count]) => {
             const isSelected = selectedValues.includes(value);
-            const base = theme === 'green' ? '#10B981' : '#3B82F6';
-            const baseStroke = theme === 'green' ? '#059669' : '#2563EB';
+            const base = theme === 'green' ? '#f5f5f5' : '#000000';
+            const baseStroke = '#000000';
             const fillColor = isSelected ? base : base;
             const strokeColor = isSelected ? baseStroke : baseStroke;
             return (
@@ -220,9 +222,9 @@ export const CustomBarChart = ({
                 width={xScale.bandwidth()}
                 height={innerHeight - yScale(count)}
                 fill={fillColor}
-                fillOpacity={0.8}
+                fillOpacity={1}
                 stroke={strokeColor}
-                strokeWidth={1}
+                strokeWidth={theme === 'green' ? 1.5 : 1}
                 className="cursor-pointer transition-all duration-200 hover:opacity-100"
                 onClick={() => onBarClick && onBarClick(value)}
                 onDoubleClick={(e) => e.stopPropagation()}
@@ -239,6 +241,7 @@ export const CustomBarChart = ({
                   y="20"
                   textAnchor="middle"
                   fontSize="9"
+                  fontFamily="SF Mono, Monaco, Inconsolata, Courier New, monospace"
                   fill="currentColor"
                   transform={barData.length > 8 ? "rotate(-45)" : ""}
                 >
@@ -258,6 +261,7 @@ export const CustomBarChart = ({
                   textAnchor="end"
                   dominantBaseline="middle"
                   fontSize="10"
+                  fontFamily="SF Mono, Monaco, Inconsolata, Courier New, monospace"
                   fill="currentColor"
                 >
                   {tick}
@@ -270,7 +274,7 @@ export const CustomBarChart = ({
       
       {/* Selection info */}
       {selectedValues.length > 0 && (
-        <div className="absolute top-2 right-2 px-2 py-1 text-xs bg-green-100 text-green-700 rounded">
+        <div className="absolute top-2 right-2 px-2 py-1 text-xs font-mono bg-vercel-bg text-vercel-black border border-vercel-border rounded">
           {selectedValues.length} selected
         </div>
       )}
@@ -342,7 +346,7 @@ export const CustomSearch = ({
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-3 py-2 text-left border border-gray-300 rounded-md bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+        className="w-full px-3 py-2 text-xs font-mono text-left border border-vercel-border rounded bg-white hover:bg-vercel-bg focus:outline-none focus:border-vercel-black transition-colors"
       >
         <div className="flex items-center justify-between">
           <span className="text-sm text-gray-700">
@@ -362,21 +366,21 @@ export const CustomSearch = ({
       </button>
       
       {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-md shadow-lg z-10 max-h-64 overflow-hidden">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-vercel-border rounded shadow-sm z-10 max-h-64 overflow-hidden">
           {/* Search input */}
-          <div className="p-2 border-b border-gray-200">
+          <div className="p-2 border-b border-vercel-border">
             <input
               type="text"
               placeholder="Search values..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full px-2 py-1 text-xs font-mono border border-vercel-border rounded focus:outline-none focus:border-vercel-black"
             />
           </div>
           
           {/* Clear all button */}
           {selectedValues.size > 0 && (
-            <div className="p-2 border-b border-gray-200">
+            <div className="p-2 border-b border-vercel-border">
               <button
                 onClick={clearAll}
                 className="text-xs text-red-600 hover:text-red-800 transition-colors"
@@ -402,7 +406,7 @@ export const CustomSearch = ({
                     handleValueToggle(value);
                   }}
                   onDoubleClick={(e) => e.stopPropagation()} // Prevent double-click propagation
-                  className="mr-2 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  className="mr-2 rounded border-vercel-border text-vercel-black focus:ring-vercel-black"
                 />
                 <span className="flex-1 text-sm truncate">{value}</span>
                 <span className="text-xs text-gray-500 ml-2">({count})</span>

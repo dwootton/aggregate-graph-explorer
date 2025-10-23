@@ -23,17 +23,17 @@ const QueryStepWithFilters = ({ step, index, activeFilters, onClick, onRemove, o
   const isNodeStep = index % 2 === 0;
   const filterType = isNodeStep ? 'nodeFilters' : 'edgeFilters';
 
-  // Color code query path: nodes (even steps) = blue, edges (odd steps) = green
+  // Color code query path: nodes (even steps) = black/white, edges (odd steps) = gray
   const stepColor = isNodeStep 
-    ? 'bg-blue-50 border-blue-300 text-blue-800 hover:bg-blue-100' 
-    : 'bg-green-50 border-green-300 text-green-800 hover:bg-green-100';
+    ? 'bg-white border-vercel-border text-vercel-black hover:bg-vercel-bg' 
+    : 'bg-vercel-bg border-vercel-border text-vercel-black hover:bg-white';
     
   const hasFilters = relevantFilters.length > 0;
 
   return (
     <div className="flex flex-col">
       {/* Main Query Step Container */}
-      <div className={`rounded-lg border-2 ${stepColor} shadow-sm transition-all duration-200 overflow-hidden`}>
+      <div className={`rounded border ${stepColor} transition-all duration-200 overflow-hidden`}>
         {/* Query Step Header */}
         <div className="flex items-center justify-between p-3">
           <div 
@@ -41,9 +41,9 @@ const QueryStepWithFilters = ({ step, index, activeFilters, onClick, onRemove, o
             onClick={onClick}
             title={`Navigate to: ${step}`}
           >
-            <span className="font-semibold text-sm">{step}</span>
+            <span className="font-mono text-sm font-medium">{step}</span>
             {hasFilters && (
-              <span className="text-xs bg-white rounded-full px-2 py-0.5 font-medium">
+              <span className="text-xs font-mono bg-vercel-black text-white rounded-full px-2 py-0.5">
                 {relevantFilters.length} filter{relevantFilters.length !== 1 ? 's' : ''}
               </span>
             )}
@@ -57,7 +57,7 @@ const QueryStepWithFilters = ({ step, index, activeFilters, onClick, onRemove, o
                   e.stopPropagation();
                   setIsExpanded(!isExpanded);
                 }}
-                className="p-1 rounded hover:bg-white hover:bg-opacity-50 transition-colors"
+                className="p-1 rounded hover:bg-vercel-black hover:bg-opacity-5 transition-colors"
                 title={isExpanded ? "Collapse filters" : "Expand filters"}
               >
                 <svg 
@@ -77,7 +77,7 @@ const QueryStepWithFilters = ({ step, index, activeFilters, onClick, onRemove, o
                 e.stopPropagation();
                 onRemove();
               }}
-              className="p-1 rounded hover:bg-red-100 text-red-500 hover:text-red-700 transition-colors"
+              className="p-1 rounded hover:bg-vercel-black hover:bg-opacity-5 text-vercel-gray hover:text-vercel-black transition-colors"
               title="Remove this step"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -89,17 +89,17 @@ const QueryStepWithFilters = ({ step, index, activeFilters, onClick, onRemove, o
         
         {/* Expandable Filter List */}
         {hasFilters && isExpanded && (
-          <div className="border-t border-current border-opacity-20 bg-white bg-opacity-30">
+          <div className="border-t border-vercel-border bg-vercel-bg bg-opacity-50">
             <div className="p-3 space-y-2">
-              <div className="text-xs font-medium opacity-75 uppercase tracking-wide">
+              <div className="text-xs font-mono text-vercel-gray uppercase tracking-wide">
                 Active Filters:
               </div>
               {relevantFilters.map((filter, filterIndex) => (
                 <div 
                   key={filterIndex}
-                  className="flex items-center justify-between py-1.5 px-2 bg-white rounded text-sm"
+                  className="flex items-center justify-between py-1.5 px-2 bg-white border border-vercel-border rounded text-sm"
                 >
-                  <span className="font-medium text-gray-700">
+                  <span className="font-mono text-xs text-vercel-black">
                     {getFilterDisplayText(filter)}
                   </span>
                   <button
@@ -107,7 +107,7 @@ const QueryStepWithFilters = ({ step, index, activeFilters, onClick, onRemove, o
                         e.stopPropagation();
                       onRemoveFilter(filterType, filter.attribute, filter.queryStep, filter.queryContext);
                     }}
-                    className="ml-2 p-0.5 rounded text-red-500 hover:text-red-700 hover:bg-red-50 transition-colors"
+                    className="ml-2 p-0.5 rounded text-vercel-gray hover:text-vercel-black hover:bg-vercel-bg transition-colors"
                     title="Remove filter"
                   >
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -219,12 +219,14 @@ const QueryBuilder = ({
   };
 
   const removeQueryPart = (index) => {
-    console.log(`Removing query part at index ${index}:`, {
+    console.log('[Path Debug] Removing query part', {
+      index,
       removedPart: currentQuery[index],
-      remainingParts: currentQuery.length - 1
+      from: currentQuery
     });
-    
-    const newQuery = currentQuery.filter((_, i) => i !== index);
+    // Remove selected step and everything after it to maintain context
+    const newQuery = currentQuery.slice(0, index);
+    console.log('[Path Debug] New query after removal', { to: newQuery });
     onQueryChange(newQuery);
   };
 
@@ -241,48 +243,48 @@ const QueryBuilder = ({
   };
 
   return (
-    <div className="bg-white border-b border-gray-200 px-4 py-3">
+    <div className="bg-white border-b border-vercel-border px-4 py-2">
       <div className="max-w-7xl mx-auto">
         {/* Query Display */}
-        <div className="flex items-start gap-4 mb-4">
-          <label className="text-sm font-medium text-gray-700 mt-3">Query Path:</label>
-          <div className="flex-1 min-h-[60px]">
-            {currentQuery.length === 0 ? (
-              <div className="p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 text-center">
-                <span className="text-gray-400 text-sm">Start by selecting a node type...</span>
-              </div>
-            ) : (
-              <div className="flex items-start gap-4 flex-wrap">
-                {currentQuery.map((part, index) => (
-                  <div key={index} className="flex items-start gap-3">
-                    {index > 0 && (
-                      <div className="mt-6 text-gray-400 font-semibold">→</div>
-                    )}
-                    <QueryStepWithFilters
-                      step={part}
-                      index={index}
-                      activeFilters={activeFilters}
-                      onClick={() => handleQueryPillClick(index)}
-                      onRemove={() => removeQueryPart(index)}
-                      onRemoveFilter={onRemoveFilter}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
+        <div className="flex items-center gap-3 justify-between">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <label className="text-xs font-mono text-vercel-gray whitespace-nowrap">Query Path:</label>
+            <div className="flex-1">
+              {currentQuery.length === 0 ? (
+                <div className="px-3 py-2 border border-dashed border-vercel-border rounded bg-vercel-bg text-center">
+                  <span className="text-vercel-light-gray text-xs font-mono">Start by selecting a node type...</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 flex-wrap">
+                  {currentQuery.map((part, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      {index > 0 && (
+                        <div className="text-vercel-light-gray font-mono text-sm">→</div>
+                      )}
+                      <QueryStepWithFilters
+                        step={part}
+                        index={index}
+                        activeFilters={activeFilters}
+                        onClick={() => handleQueryPillClick(index)}
+                        onRemove={() => removeQueryPart(index)}
+                        onRemoveFilter={onRemoveFilter}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Query Controls */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          {/* Query Controls */}
+          <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => {
                 console.log('Query reset requested');
                 onReset();
               }}
               disabled={currentQuery.length === 0}
-              className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-1.5 text-xs font-mono text-vercel-black bg-white border border-vercel-border rounded hover:bg-vercel-bg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               Reset
             </button>
@@ -293,7 +295,7 @@ const QueryBuilder = ({
                 setShowSaveDialog(true);
               }}
               disabled={currentQuery.length === 0 || isSaving}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-1.5 text-xs font-mono text-white bg-vercel-black border border-vercel-black rounded hover:bg-vercel-gray disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               {isSaving ? 'Saving...' : 'Save Query'}
             </button>
@@ -303,29 +305,26 @@ const QueryBuilder = ({
                 console.log('Saved queries panel toggled');
                 onToggleSavedQueries();
               }}
-              className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+              className="px-3 py-1.5 text-xs font-mono text-vercel-black bg-white border border-vercel-border rounded hover:bg-vercel-bg transition-colors"
             >
               Saved Queries
             </button>
-          </div>
-
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <span>Query depth: {currentQuery.length}</span>
+            <div className="text-xs font-mono text-vercel-light-gray">
+              {currentQuery.length > 0 && `Depth: ${currentQuery.length}`}
+            </div>
           </div>
         </div>
-
-
       </div>
 
       {/* Save Dialog Modal */}
       {showSaveDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96 max-w-90vw shadow-xl">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Save Query</h3>
+        <div className="fixed inset-0 bg-vercel-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded border border-vercel-border p-6 w-96 max-w-90vw shadow-sm">
+            <h3 className="text-sm font-mono font-semibold text-vercel-black mb-4">Save Query</h3>
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-xs font-mono text-vercel-gray mb-1">
                   Query Name
                 </label>
                 <input
@@ -333,13 +332,13 @@ const QueryBuilder = ({
                   value={queryName}
                   onChange={(e) => setQueryName(e.target.value)}
                   placeholder="Enter a name for this query..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 text-xs font-mono border border-vercel-border rounded focus:outline-none focus:border-vercel-black"
                   disabled={isSaving}
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-xs font-mono text-vercel-gray mb-1">
                   Notes (Optional)
                 </label>
                 <textarea
@@ -347,12 +346,12 @@ const QueryBuilder = ({
                   onChange={(e) => setQueryNotes(e.target.value)}
                   placeholder="Add notes about this query..."
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 text-xs font-mono border border-vercel-border rounded focus:outline-none focus:border-vercel-black"
                   disabled={isSaving}
                 />
               </div>
 
-              <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded">
+              <div className="text-xs font-mono text-vercel-gray bg-vercel-bg p-3 rounded border border-vercel-border">
                 <strong>Query to save:</strong> {currentQuery.join(' → ')}
               </div>
             </div>
@@ -364,14 +363,14 @@ const QueryBuilder = ({
                   setShowSaveDialog(false);
                 }}
                 disabled={isSaving}
-                className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50 transition-colors"
+                className="px-4 py-2 text-xs font-mono text-vercel-black bg-white border border-vercel-border rounded hover:bg-vercel-bg disabled:opacity-30 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSave}
                 disabled={!queryName.trim() || isSaving}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="px-4 py-2 text-xs font-mono text-white bg-vercel-black border border-vercel-black rounded hover:bg-vercel-gray disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
                 {isSaving ? 'Saving...' : 'Save'}
               </button>

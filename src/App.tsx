@@ -5,6 +5,7 @@ import AttributePanel from './components/AttributePanel';
 import QueryBuilder from './components/QueryBuilder';
 import SavedQueries from './components/SavedQueries';
 import SettingsPanel from './components/SettingsPanel';
+import DeriveAttributePanel from './components/DeriveAttributePanel';
 import { CypherService } from './services/cypher';
 import {
   GraphData,
@@ -44,14 +45,60 @@ function App() {
   const [edgeTypeSummaryCypher, setEdgeTypeSummaryCypher] = useState<EdgeTypeSummary[]>([]);
   const [nodeTypeSummaryCypher, setNodeTypeSummaryCypher] = useState<NodeTypeSummary[]>([]);
   const [currentEdgesCypher, setCurrentEdgesCypher] = useState<GraphLink[]>([]);
+
   // Derive New Attribute builder state
   const [deriveBuilder, setDeriveBuilder] = useState<{
     active: boolean;
+    stage: 'subquery' | 'measure' | null;
     method: 'path' | 'count' | null;
     name: string;
-    path: string[];
+    path: string[]; // [N, E, N, ...]
     startType: string | null;
-  }>({ active: false, method: null, name: '', path: [], startType: null });
+    // Measure builder selections
+    measureType: 'boolean' | 'numeric' | 'categorical' | null;
+    measureOp: string | null;
+    measureProp: string | null;
+    measurePropContext: 'node' | 'edge' | null;
+  }>({ active: false, stage: null, method: null, name: '', path: [], startType: null, measureType: null, measureOp: null, measureProp: null, measurePropContext: null });
+
+  // Always-fresh derive state for event handlers (e.g., D3) that may call stale closures
+  const deriveRef = useRef(deriveBuilder);
+  useEffect(() => { deriveRef.current = deriveBuilder; }, [deriveBuilder]);
+
+  // Derive debug: watch path updates
+  useEffect(() => {
+    if (!deriveBuilder.active) return;
+    console.log('[Derive Debug] path update', {
+      path: deriveBuilder.path,
+      length: deriveBuilder.path.length,
+      endsOnNode: deriveBuilder.path.length % 2 === 1,
+      startType: deriveBuilder.startType,
+      stage: deriveBuilder.stage
+    });
+  }, [deriveBuilder.path]);
+
+  // Derive Debug: active/stage transitions
+  const prevDeriveActiveRef = useRef<boolean>(deriveBuilder.active);
+  const prevDeriveStageRef = useRef<typeof deriveBuilder.stage>(deriveBuilder.stage);
+  useEffect(() => {
+    if (prevDeriveActiveRef.current !== deriveBuilder.active) {
+      console.log('[Derive Debug] active changed', { from: prevDeriveActiveRef.current, to: deriveBuilder.active });
+      prevDeriveActiveRef.current = deriveBuilder.active;
+    }
+    if (prevDeriveStageRef.current !== deriveBuilder.stage) {
+      console.log('[Derive Debug] stage changed', { from: prevDeriveStageRef.current, to: deriveBuilder.stage });
+      prevDeriveStageRef.current = deriveBuilder.stage;
+    }
+  }, [deriveBuilder.active, deriveBuilder.stage]);
+
+  // Derive Debug: finalize disabled state reasons
+  useEffect(() => {
+    if (!deriveBuilder.active || deriveBuilder.stage !== 'subquery') return;
+    const len = deriveBuilder.path.length;
+    const endsOnNode = len % 2 === 1;
+    const disabled = len < 3 || !endsOnNode;
+    console.log('[Derive Debug] finalize state', { disabled, len, endsOnNode, path: deriveBuilder.path });
+  }, [deriveBuilder.path, deriveBuilder.stage, deriveBuilder.active]);
 
   // NEW: Scoped Filter state management
   const [activeFilters, setActiveFilters] = useState<ActiveFilters>({
@@ -66,14 +113,19 @@ function App() {
   // NEW: Track what type of attributes to show in left panel
   const [showAttributesFor, setShowAttributesFor] = useState<'nodes' | 'edges'>('nodes');
 
-  // Settings state with nice defaults
+  // View/selection debug
+  useEffect(() => {
+    console.log('[Derive Debug] view/selection change', { currentView, selectedNodeType, selectedEdgeType, showAttributesFor });
+  }, [currentView, selectedNodeType, selectedEdgeType, showAttributesFor]);
+
+  // Settings state with Vercel-inspired monochrome defaults
   const [settings, setSettings] = useState<Settings>({
-    nodeColors: ['#0EA5E9', '#0284C7', '#0369A1', '#075985', '#0C4A6E', '#082F49'],
-    edgeColors: ['#DC2626', '#B91C1C', '#991B1B', '#7F1D1D', '#450A0A', '#350808'],
+    nodeColors: ['#000000', '#1a1a1a', '#333333', '#4d4d4d', '#666666', '#808080'],
+    edgeColors: ['#fafafa', '#f7f7f7', '#f5f5f5', '#f2f2f2', '#f0f0f0', '#ededed'],
     showConnectors: true,
     animateTransitions: true,
-    customNodeColors: ['#0EA5E9', '#0284C7', '#0369A1', '#075985', '#0C4A6E', '#082F49'],
-    customEdgeColors: ['#DC2626', '#B91C1C', '#991B1B', '#7F1D1D', '#450A0A', '#350808'],
+    customNodeColors: ['#000000', '#1a1a1a', '#333333', '#4d4d4d', '#666666', '#808080'],
+    customEdgeColors: ['#fafafa', '#f7f7f7', '#f5f5f5', '#f2f2f2', '#f0f0f0', '#ededed'],
     useCustomColors: false
   });
 
@@ -319,6 +371,9 @@ function App() {
     console.log('Settings updated:', newSettings);
   }, []);
 
+  // Navigation helper declared later (after findConnectedNodes)
+  let updateViewForPath: (path: string[]) => Promise<void>;
+
   // Load graph data
   useEffect(() => {
     console.time('Graph Data Loading');
@@ -546,20 +601,80 @@ function App() {
     return result;
   }, [cypherEnabled, graphData, edgeIndex, applyCascadingFilters, currentQuery]);
 
+  // Now define updateViewForPath with access to findConnectedNodes
+  updateViewForPath = useCallback(async (path: string[]) => {
+    console.log('[Path Debug] updateViewForPath', { path, length: path.length });
+    if (!path || path.length === 0) {
+      setSelectedNodeType(null);
+      setSelectedEdgeType(null);
+      setCurrentView('nodeTypes');
+      setFilteredNodes([]);
+      setShowAttributesFor('nodes');
+      return;
+    }
+    if (path.length === 1) {
+      const nodeType = path[0];
+      console.log('[Path Debug] show edge types for', nodeType);
+      setSelectedNodeType(nodeType);
+      setSelectedEdgeType(null);
+      setCurrentView('edgeTypes');
+      setFilteredNodes([]);
+      setShowAttributesFor('nodes');
+      return;
+    }
+    if (path.length >= 2) {
+      const nodeType = path[0];
+      const edgeType = path[1];
+      console.log('[Path Debug] show specific nodes for', { nodeType, edgeType });
+      setSelectedNodeType(nodeType);
+      setSelectedEdgeType(edgeType);
+      setCurrentView('specificNodes');
+      setShowAttributesFor('edges');
+      try {
+        if (cypherEnabled) {
+          const nodes = await CypherService.connectedNodes([nodeType, edgeType], activeFilters);
+          setFilteredNodes(nodes);
+        } else {
+          const nodes = findConnectedNodes(nodeType, edgeType);
+          setFilteredNodes(nodes);
+        }
+      } catch (e) {
+        console.warn('[Path Debug] failed to load connected nodes, falling back', e);
+        const nodes = findConnectedNodes(nodeType, edgeType);
+        setFilteredNodes(nodes);
+      }
+      return;
+    }
+  }, [cypherEnabled, activeFilters, findConnectedNodes]);
+
      // Handle node type selection with context preservation
    const handleNodeTypeClick = useCallback((nodeType: string) => {
-     if (deriveBuilder.active && deriveBuilder.method === 'path') {
+     const d = deriveRef.current;
+     console.log('[Derive Debug] handleNodeTypeClick fired', {
+       nodeType,
+       deriveActive: d.active,
+       deriveMethod: d.method,
+       currentView,
+       path: d.path
+     });
+     if (d.active && d.method === 'path') {
        setDeriveBuilder(prev => {
          const nextPath = [...prev.path];
+         const lastIsEdge = nextPath.length > 0 && (nextPath.length % 2 === 0);
+         // If no start type set, seed with node
          if (nextPath.length === 0) {
            nextPath.push(nodeType);
-           return { ...prev, startType: nodeType, path: nextPath };
-         } else {
-           if (nextPath.length % 2 === 1) {
-             nextPath.push(nodeType);
-           }
-           return { ...prev, path: nextPath };
+           console.log('[Derive Debug] Add start node', { nodeType, path: nextPath });
+           return { ...prev, startType: nodeType, path: nextPath, stage: prev.stage || 'subquery' };
          }
+         // Only add node after an edge
+         if (lastIsEdge) {
+           nextPath.push(nodeType);
+           console.log('[Derive Debug] Add node after edge', { nodeType, path: nextPath });
+         } else {
+           console.log('[Derive Debug] Ignored node click (expecting edge next)', { nodeType, path: nextPath });
+         }
+         return { ...prev, path: nextPath };
        });
      }
      console.time(`Node Type Click: ${nodeType}`);
@@ -601,11 +716,23 @@ function App() {
 
      // Handle edge type selection with recursive capability
    const handleEdgeTypeClick = useCallback((edgeType: string) => {
-     if (deriveBuilder.active && deriveBuilder.method === 'path') {
+     const d = deriveRef.current;
+     console.log('[Derive Debug] handleEdgeTypeClick fired', {
+       edgeType,
+       deriveActive: d.active,
+       deriveMethod: d.method,
+       currentView,
+       path: d.path
+     });
+     if (d.active && d.method === 'path') {
        setDeriveBuilder(prev => {
          const nextPath = [...prev.path];
-         if (nextPath.length % 2 === 1 || nextPath.length === 0) {
+         const lastIsNode = nextPath.length > 0 && (nextPath.length % 2 === 1);
+         if (lastIsNode) {
            nextPath.push(edgeType);
+           console.log('[Derive Debug] Add edge after node', { edgeType, path: nextPath });
+         } else {
+           console.log('[Derive Debug] Ignored edge click (need a node first)', { edgeType, path: nextPath });
          }
          return { ...prev, path: nextPath };
        });
@@ -836,6 +963,168 @@ function App() {
     });
     setGraphData({ ...graphData, nodes: updatedNodes });
   }, [graphData, edgeIndex]);
+
+  // Build subquery results per start node using forward traversal
+  const buildSubqueryResults = useCallback((startType: string, path: string[], endFilters: Filter[]) => {
+    const results = new Map<string, GraphNode[]>();
+    if (!graphData) return results;
+    const startNodes = graphData.nodes.filter(n => n['Node Type'] === startType);
+    const endNodeType = path[path.length - 1];
+    for (const s of startNodes) {
+      let current = new Set<string>([s.id]);
+      for (let i = 1; i < path.length; i++) {
+        if (i % 2 === 1) {
+          // Edge step
+          const edgeType = path[i];
+          const nextIds = new Set<string>();
+          for (const id of current) {
+            const se = edgeIndex.bySource.get(id) || [];
+            const te = edgeIndex.byTarget.get(id) || [];
+            for (const e of [...se, ...te]) {
+              if (e['Edge Type'] !== edgeType) continue;
+              const other = e.source === id ? e.target : e.source;
+              nextIds.add(other);
+            }
+          }
+          current = nextIds;
+        } else {
+          // Node type step
+          const nodeType = path[i];
+          const filtered = new Set<string>();
+          for (const id of current) {
+            const node = nodeMap.get(id);
+            if (node && node['Node Type'] === nodeType) filtered.add(id);
+          }
+          current = filtered;
+        }
+      }
+      // Resolve nodes and apply end filters
+      let nodes = Array.from(current).map(id => nodeMap.get(id)).filter(Boolean) as GraphNode[];
+      if (nodes.length && endFilters && endFilters.length) {
+        nodes = applyFiltersToNodes(nodes, endFilters);
+      }
+      results.set(s.id, nodes);
+    }
+    return results;
+  }, [graphData, edgeIndex, nodeMap, applyFiltersToNodes]);
+
+  const computeDerivedNumeric = useCallback((name: string, startType: string, path: string[], endFilters: Filter[], op: string, prop?: string, propContext: 'node' | 'edge' = 'node') => {
+    if (!graphData) return;
+    const results = buildSubqueryResults(startType, path, endFilters);
+    const updated = graphData.nodes.map(n => {
+      if (n['Node Type'] !== startType) return n;
+      const items = results.get(n.id) || [];
+      let val: number | null = null;
+      if (op === 'count') {
+        val = items.length;
+      } else if (propContext === 'node') {
+        if (op === 'count_distinct' && prop) {
+          const set = new Set(items.map(it => String((it as any)[prop])));
+          val = set.size;
+        } else if (prop) {
+          const nums = items.map(it => Number((it as any)[prop])).filter(v => !isNaN(v));
+          if (nums.length === 0) val = 0;
+          else {
+            switch (op) {
+              case 'avg': val = nums.reduce((a,b)=>a+b,0)/nums.length; break;
+              case 'sum': val = nums.reduce((a,b)=>a+b,0); break;
+              case 'min': val = Math.min(...nums); break;
+              case 'max': val = Math.max(...nums); break;
+            }
+          }
+        } else {
+          val = 0;
+        }
+      } else {
+        // Edge property context — only supported for single-hop paths [N, E, N]
+        if (path.length !== 3 || !prop) { val = 0; }
+        else {
+          const edgeType = path[1];
+          const endNodeType = path[2];
+          // Build end node set for this start node
+          const endNodes = new Set((items as any[]).map(it => it.id));
+          const vals: number[] = [];
+          const se = edgeIndex.bySource.get(n.id) || [];
+          const te = edgeIndex.byTarget.get(n.id) || [];
+          [...se, ...te].forEach(e => {
+            if (e['Edge Type'] !== edgeType) return;
+            const otherId = e.source === n.id ? e.target : e.source;
+            if (!endNodes.has(otherId)) return;
+            const otherNode = nodeMap.get(otherId);
+            if (!otherNode || otherNode['Node Type'] !== endNodeType) return;
+            const v = Number((e as any)[prop]);
+            if (!isNaN(v)) vals.push(v);
+          });
+          if (op === 'count_distinct') {
+            val = new Set(vals).size;
+          } else {
+            if (vals.length === 0) val = 0;
+            else {
+              switch (op) {
+                case 'avg': val = vals.reduce((a,b)=>a+b,0)/vals.length; break;
+                case 'sum': val = vals.reduce((a,b)=>a+b,0); break;
+                case 'min': val = Math.min(...vals); break;
+                case 'max': val = Math.max(...vals); break;
+                default: val = vals.length;
+              }
+            }
+          }
+        }
+      }
+      return { ...n, [name]: val } as GraphNode;
+    });
+    setGraphData({ ...graphData, nodes: updated });
+  }, [graphData, buildSubqueryResults, edgeIndex, nodeMap]);
+
+  const computeDerivedCategorical = useCallback((name: string, startType: string, path: string[], endFilters: Filter[], op: string, prop?: string, propContext: 'node' | 'edge' = 'node') => {
+    if (!graphData) return;
+    const results = buildSubqueryResults(startType, path, endFilters);
+    const updated = graphData.nodes.map(n => {
+      if (n['Node Type'] !== startType) return n;
+      const items = results.get(n.id) || [];
+      let val: any = null;
+      const collectVals = (): string[] => {
+        if (propContext === 'node') {
+          return items.map(it => String((it as any)[prop!]))
+            .filter(v => v !== undefined && v !== 'undefined');
+        } else {
+          // Edge property context — only supported for single hop
+          if (path.length !== 3 || !prop) return [];
+          const edgeType = path[1];
+          const endNodes = new Set((items as any[]).map(it => it.id));
+          const vals: string[] = [];
+          const se = edgeIndex.bySource.get(n.id) || [];
+          const te = edgeIndex.byTarget.get(n.id) || [];
+          [...se, ...te].forEach(e => {
+            if (e['Edge Type'] !== edgeType) return;
+            const otherId = e.source === n.id ? e.target : e.source;
+            if (!endNodes.has(otherId)) return;
+            const v = (e as any)[prop!];
+            if (v !== undefined && v !== null) vals.push(String(v));
+          });
+          return vals;
+        }
+      };
+      if (prop) {
+        const vals = collectVals();
+        if (op === 'most_frequent') {
+          const counts = new Map<string, number>();
+          vals.forEach(v => counts.set(v, (counts.get(v) || 0) + 1));
+          let best: string | null = null; let bestC = -1;
+          counts.forEach((c, k) => { if (c > bestC) { bestC = c; best = k; } });
+          val = best;
+        } else if (op === 'single_value') {
+          const set = new Set(vals);
+          val = set.size === 1 ? Array.from(set)[0] : null;
+        } else if (op === 'list_distinct') {
+          const set = new Set(vals);
+          val = Array.from(set).join(', ');
+        }
+      }
+      return { ...n, [name]: val } as GraphNode;
+    });
+    setGraphData({ ...graphData, nodes: updated });
+  }, [graphData, buildSubqueryResults, edgeIndex]);
   // OPTIMIZED: Memoized edge types with cascading filter support (moved after applyFiltersToNodes)
   const memoizedEdgeTypes = useMemo(() => {
     if (currentView !== 'edgeTypes' || !selectedNodeType) return [];
@@ -1162,39 +1451,39 @@ function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-xl">Loading graph data...</div>
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-sm font-mono text-vercel-black">Loading graph data...</div>
       </div>
     );
   }
 
   if (!graphData) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-xl text-red-600">Error loading graph data</div>
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-sm font-mono text-vercel-black">Error loading graph data</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-white">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b">
+      <header className="bg-white border-b border-vercel-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <h1 className="text-2xl font-bold text-gray-900">
+          <div className="flex justify-between items-center py-2">
+            <h1 className="text-xl font-mono font-semibold text-vercel-black tracking-tight">
               Aggregated Graph Explorer
             </h1>
             <div className="flex items-center gap-4">
-              <div className="text-sm text-gray-600">
-                {graphData.nodes?.length || 0} nodes, {graphData.links?.length || 0} edges
+              <div className="text-xs font-mono text-vercel-gray">
+                {graphData.nodes?.length || 0} nodes · {graphData.links?.length || 0} edges
               </div>
-              <div className="text-xs text-green-600">
-                Cache: {edgeTypeCache.size} types
+              <div className="text-xs font-mono text-vercel-light-gray">
+                Cache: {edgeTypeCache.size}
               </div>
               <button
                 onClick={() => setShowSettings(true)}
-                className="p-2 text-gray-600 hover:text-gray-900 transition-colors"
+                className="p-2 text-vercel-gray hover:text-vercel-black transition-colors"
                 title="Settings"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1210,10 +1499,10 @@ function App() {
       {/* Right-side toggle handle for Saved Queries panel */}
       <button
         onClick={() => setShowSavedQueries(true)}
-        className={`fixed top-1/2 right-0 -translate-y-1/2 z-40 bg-white border border-gray-200 shadow px-2 py-3 rounded-l ${showSavedQueries ? 'hidden' : ''}`}
+        className={`fixed top-1/2 right-0 -translate-y-1/2 z-40 bg-white border border-vercel-border shadow-sm px-2 py-3 hover:bg-vercel-bg transition-colors ${showSavedQueries ? 'hidden' : ''}`}
         title="Open Saved Queries"
       >
-        <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-5 h-5 text-vercel-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5V4H2v16h5m10 0V8m0 12l-5-3-5 3V8l5 3 5-3" />
         </svg>
       </button>
@@ -1221,7 +1510,11 @@ function App() {
       {/* Query Builder */}
       <QueryBuilder 
         currentQuery={currentQuery}
-        onQueryChange={setCurrentQuery}
+        onQueryChange={(q: string[]) => {
+          console.log('[Path Debug] onQueryChange', { from: currentQuery, to: q });
+          setCurrentQuery(q);
+          updateViewForPath(q);
+        }}
         onReset={resetQuery}
         onSave={saveCurrentQuery}
         onToggleSavedQueries={() => setShowSavedQueries(!showSavedQueries)}
@@ -1234,101 +1527,213 @@ function App() {
       <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
       </div>
 
-      <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="flex gap-6 h-[calc(100vh-200px)] relative">
+      <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-3">
+        <div className="flex gap-4 h-[calc(100vh-140px)] relative">
           {/* Left Side - Contextual Attributes Panel (Full Height) */}
           <div className="w-80 flex-shrink-0 h-full overflow-y-auto relative">
-            {/* Derive New Attribute Controls */}
-            <div className="p-3 border-b bg-white sticky top-0 z-10">
-              {!deriveBuilder.active ? (
-                <div className="flex items-center justify-between">
-                  <button
-                    onClick={() => setDeriveBuilder({ active: true, method: 'path', name: '', path: [], startType: selectedNodeType })}
-                    className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 inline-flex items-center gap-2"
-                    title="Derive a new attribute via path or count"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v12m6-6H6"/></svg>
-                    Derive New Attribute
-                  </button>
-                  <div className="flex items-center gap-2 text-xs text-gray-500">
-                    <span className="hidden sm:inline">Selection mode off</span>
-                  </div>
-                </div>
-              ) : (
+            {/* Derive New Attribute Controls (Two-step) */}
+            {deriveBuilder.active && (
+            <div className="p-3 border-b border-vercel-border bg-white sticky top-0 z-10">
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={deriveBuilder.name}
-                      onChange={(e) => setDeriveBuilder(prev => ({ ...prev, name: e.target.value }))}
-                      placeholder={deriveBuilder.method === 'count' ? 'Attribute name (e.g., degree)' : 'Attribute name (e.g., isSynthArtist)'}
-                      className="flex-1 px-2 py-1 text-sm border rounded"
-                    />
-                    <select
-                      value={deriveBuilder.method || 'path'}
-                      onChange={(e) => setDeriveBuilder(prev => ({ ...prev, method: (e.target.value as 'path'|'count') }))}
-                      className="px-2 py-1 text-sm border rounded bg-white"
-                    >
-                      <option value="path">Path-based</option>
-                      <option value="count">Count-based</option>
-                    </select>
-                  </div>
-                  {deriveBuilder.method === 'path' ? (
-                    <div className="text-xs text-gray-700">
-                      <div className="font-medium">Selection mode: Click an edge, then a node on the canvas to build a path.</div>
-                      <div className="mt-1"><span className="text-gray-500">Path:</span> {deriveBuilder.path.length > 0 ? deriveBuilder.path.join(' → ') : 'Start by selecting a node type or edge'}</div>
+                  {/* Step 1: Subquery builder → Finalize */}
+                  {deriveBuilder.stage !== 'measure' && (
+                    <div className="text-xs font-mono text-vercel-black">
+                      <div className="font-medium">Building a subquery for each {deriveBuilder.startType || selectedNodeType || 'node'}...</div>
+                      <div className="mt-1"><span className="text-vercel-gray">Path:</span> {deriveBuilder.path.length>0?deriveBuilder.path.join(' → '): (selectedNodeType ? 'Click an edge, then a node...' : 'Click a node type, then an edge, then a node...')}</div>
                       <div className="mt-2 flex items-center gap-2">
-                        <button
-                          onClick={() => {
-                            // Use filters of current end context if any
-                            if (!deriveBuilder.name || !deriveBuilder.startType || deriveBuilder.path.length < 3) return;
-                            const currentStep = currentQuery.length - 1;
-                            const endContext = deriveBuilder.path[deriveBuilder.path.length - 1];
-                            const endFilters = activeFilters.nodeFilters.filter(f => f.queryStep === currentStep && f.queryContext === endContext);
-                            computeDerivedBoolean(deriveBuilder.name, deriveBuilder.startType, deriveBuilder.path, endFilters);
-                            setDeriveBuilder({ active: false, method: null, name: '', path: [], startType: null });
-                          }}
-                          className="px-3 py-1.5 text-sm rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-                          disabled={!deriveBuilder.name || !deriveBuilder.startType || deriveBuilder.path.length < 3}
-                        >
-                          Create Derived Attribute
-                        </button>
-                        <button
-                          onClick={() => setDeriveBuilder({ active: false, method: null, name: '', path: [], startType: null })}
-                          className="px-3 py-1.5 text-sm rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-xs text-gray-700">
-                      <div className="font-medium">Count-based: define quantitative attributes like degree.</div>
-                      <div className="mt-1">Scope: {selectedNodeType || 'Select a node type from the canvas'}</div>
-                      <div className="mt-2 flex items-center gap-2">
-                        <button
-                          onClick={() => {
-                            if (!deriveBuilder.name || !selectedNodeType) return;
-                            computeDerivedCount(deriveBuilder.name, selectedNodeType);
-                            setDeriveBuilder({ active: false, method: null, name: '', path: [], startType: null });
-                          }}
-                          className="px-3 py-1.5 text-sm rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-                          disabled={!deriveBuilder.name || !selectedNodeType}
-                        >
-                          Create Derived Attribute
-                        </button>
-                        <button
-                          onClick={() => setDeriveBuilder({ active: false, method: null, name: '', path: [], startType: null })}
-                          className="px-3 py-1.5 text-sm rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
-                        >
-                          Cancel
-                        </button>
+                        <button onClick={()=>{ console.log('[Derive Debug] Finalize Subquery clicked', { path: deriveBuilder.path }); setDeriveBuilder(prev=>({...prev, stage:'measure'})); }} disabled={deriveBuilder.path.length<3 || (deriveBuilder.path.length % 2 === 0)} className="px-3 py-1.5 text-xs font-mono rounded border border-vercel-black bg-vercel-black text-white hover:bg-vercel-gray disabled:opacity-30 transition-colors">Finalize Subquery</button>
+                        <button onClick={()=>setDeriveBuilder(prev=>({...prev, path:[], startType:selectedNodeType||null}))} className="px-3 py-1.5 text-xs font-mono rounded border border-vercel-border bg-white text-vercel-black hover:bg-vercel-bg transition-colors">Clear Path</button>
+                        <button onClick={()=>setDeriveBuilder({ active:false, stage:null, method:null, name:'', path:[], startType:null, measureType:null, measureOp:null, measureProp:null, measurePropContext:null })} className="px-3 py-1.5 text-xs font-mono rounded border border-vercel-border bg-white text-vercel-black hover:bg-vercel-bg transition-colors">Cancel</button>
                       </div>
                     </div>
                   )}
+
+                  {deriveBuilder.stage === 'measure' && (
+                    <>
+                      <div className="text-xs font-mono text-vercel-gray mb-2">
+                        Subquery: <span className="text-vercel-black">{deriveBuilder.path.join(' → ')}</span>
+                      </div>
+                      
+                      <DeriveAttributePanel
+                        deriveBuilder={deriveBuilder}
+                        setDeriveBuilder={setDeriveBuilder}
+                        selectedNodeType={selectedNodeType}
+                        graphData={graphData}
+                        currentQuery={currentQuery}
+                        activeFilters={activeFilters}
+                        computeDerivedBoolean={computeDerivedBoolean}
+                        computeDerivedNumeric={computeDerivedNumeric}
+                        computeDerivedCategorical={computeDerivedCategorical}
+                        setGraphData={setGraphData}
+                      />
+
+                    <div className="text-xs font-mono text-vercel-black space-y-2">
+                      <div className="text-vercel-gray font-semibold">Visual Builder</div>
+                      <div className="flex items-center gap-2">
+                        <input type="text" value={deriveBuilder.name} onChange={(e)=>setDeriveBuilder(prev=>({...prev, name:e.target.value}))} placeholder="Attribute name" className="px-2 py-1 text-xs font-mono border border-vercel-border rounded focus:outline-none focus:border-vercel-black" />
+                        <button onClick={()=>setDeriveBuilder({ active:false, stage:null, method:null, name:'', path:[], startType:null, measureType:null, measureOp:null, measureProp:null, measurePropContext:null })} className="px-2 py-1 text-xs font-mono rounded border border-vercel-border bg-white text-vercel-black hover:bg-vercel-bg transition-colors">Cancel</button>
+                      </div>
+                      <div className="font-medium">What kind of attribute?</div>
+                      <div className="flex items-center gap-2">
+                        <label className="inline-flex items-center gap-1 text-xs"><input type="radio" name="measureType" checked={deriveBuilder.measureType==='boolean'} onChange={()=>setDeriveBuilder(prev=>({...prev, measureType:'boolean', measureOp:'exists'}))}/> True/False</label>
+                        <label className="inline-flex items-center gap-1 text-xs"><input type="radio" name="measureType" checked={deriveBuilder.measureType==='numeric'} onChange={()=>setDeriveBuilder(prev=>({...prev, measureType:'numeric', measureOp:'count'}))}/> Number</label>
+                        <label className="inline-flex items-center gap-1 text-xs"><input type="radio" name="measureType" checked={deriveBuilder.measureType==='categorical'} onChange={()=>setDeriveBuilder(prev=>({...prev, measureType:'categorical', measureOp:'most_frequent'}))}/> Category/Text</label>
+                      </div>
+
+                      {deriveBuilder.measureType === 'boolean' && (
+                        <div className="space-y-2">
+                          <div>The new attribute will be True if the subquery...</div>
+                          <div className="flex items-center gap-2">
+                            <label className="inline-flex items-center gap-1 text-xs"><input type="radio" name="boolOp" checked={deriveBuilder.measureOp==='exists'} onChange={()=>setDeriveBuilder(prev=>({...prev, measureOp:'exists'}))}/> Finds at least one match</label>
+                            <label className="inline-flex items-center gap-1 text-xs"><input type="radio" name="boolOp" checked={deriveBuilder.measureOp==='not_exists'} onChange={()=>setDeriveBuilder(prev=>({...prev, measureOp:'not_exists'}))}/> Finds no matches</label>
+                          </div>
+                          <div className="pt-1">
+                            <button className="px-3 py-1.5 text-xs font-mono rounded border border-vercel-black bg-vercel-black text-white hover:bg-vercel-gray disabled:opacity-30 transition-colors" disabled={!deriveBuilder.name || !deriveBuilder.startType || deriveBuilder.path.length<3} onClick={()=>{
+                              if (!deriveBuilder.startType) return;
+                              const currentStep = currentQuery.length - 1;
+                              const endContext = deriveBuilder.path[deriveBuilder.path.length - 1];
+                              const endFilters = activeFilters.nodeFilters.filter(f => f.queryStep === currentStep && f.queryContext === endContext);
+                              if (deriveBuilder.measureOp==='exists') {
+                                computeDerivedBoolean(deriveBuilder.name, deriveBuilder.startType, deriveBuilder.path, endFilters);
+                              } else {
+                                computeDerivedBoolean('__tmp_exists__', deriveBuilder.startType, deriveBuilder.path, endFilters);
+                                setGraphData(prev=>{
+                                  if (!prev) return prev;
+                                  const updated = prev.nodes.map(n=>{
+                                    if (n['Node Type']!==deriveBuilder.startType!) return n;
+                                    const v = (n as any)['__tmp_exists__'];
+                                    const nv = v === undefined ? false : !Boolean(v);
+                                    const { ['__tmp_exists__']: _omit, ...rest } = n as any;
+                                    return { ...rest, [deriveBuilder.name!]: nv } as GraphNode;
+                                  });
+                                  return { ...prev, nodes: updated };
+                                });
+                              }
+                              setDeriveBuilder({ active:false, stage:null, method:null, name:'', path:[], startType:null, measureType:null, measureOp:null, measureProp:null, measurePropContext:null });
+                            }}>Create Attribute</button>
+                          </div>
+                        </div>
+                      )}
+
+                      {deriveBuilder.measureType === 'numeric' && (
+                        <div className="space-y-2">
+                          <div>Calculate a number based on the {deriveBuilder.path[deriveBuilder.path.length-1]} nodes found…</div>
+                          <div className="flex flex-wrap gap-2 items-center text-xs">
+                            <select className="border rounded px-2 py-1" value={deriveBuilder.measureOp || 'count'} onChange={(e)=>setDeriveBuilder(prev=>({...prev, measureOp:e.target.value }))}>
+                              <option value="count">COUNT of</option>
+                              <option value="count_distinct">COUNT DISTINCT of</option>
+                              <option value="avg">AVERAGE of</option>
+                              <option value="sum">SUM of</option>
+                              <option value="min">MIN of</option>
+                              <option value="max">MAX of</option>
+                            </select>
+                            {deriveBuilder.measureOp && deriveBuilder.measureOp !== 'count' && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-gray-500">Property:</span>
+                                {(() => {
+                                  const endNodeType = deriveBuilder.path[deriveBuilder.path.length-1];
+                                  const lastEdgeType = deriveBuilder.path.length >= 3 ? deriveBuilder.path[deriveBuilder.path.length-2] : null;
+                                  const nodeProps = Array.from(new Set((graphData?.nodes||[]).filter(n=> n['Node Type']===endNodeType).flatMap(n=> Object.keys(n).filter(k=>k!=='id' && k!=='Node Type')))).slice(0,100);
+                                  const edgeProps = lastEdgeType ? Array.from(new Set((graphData?.links||[]).filter(l=> l['Edge Type']===lastEdgeType).flatMap(l=> Object.keys(l).filter(k=>k!=='source' && k!=='target' && k!=='Edge Type')))) : [];
+                                  const singleHop = deriveBuilder.path.length === 3;
+                                  return (
+                                    <div className="flex gap-4">
+                                      <div>
+                                        <div className="text-[10px] text-gray-500">{endNodeType} (node)</div>
+                                        <div className="flex flex-wrap gap-1 max-w-[220px]">
+                                          {nodeProps.map(p => (
+                                            <button key={`np-num-${p}`} className={`px-1.5 py-0.5 text-[10px] rounded ${deriveBuilder.measureProp===p && deriveBuilder.measurePropContext==='node' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`} onClick={()=>setDeriveBuilder(prev=>({...prev, measureProp:p, measurePropContext:'node'}))}>{p}</button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                      {lastEdgeType && (
+                                        <div>
+                                          <div className="text-[10px] text-gray-500">{lastEdgeType} (edge){!singleHop && ' — multi-hop not supported'}</div>
+                                          <div className="flex flex-wrap gap-1 max-w-[220px]">
+                                            {edgeProps.map(p => (
+                                              <button key={`ep-num-${p}`} disabled={!singleHop} title={!singleHop? 'Edge property measures supported only for single-hop subqueries':''} className={`px-1.5 py-0.5 text-[10px] rounded ${deriveBuilder.measureProp===p && deriveBuilder.measurePropContext==='edge' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-700'} ${!singleHop ? 'opacity-50 cursor-not-allowed' : ''}`} onClick={()=> singleHop && setDeriveBuilder(prev=>({...prev, measureProp:p, measurePropContext:'edge'}))}>{p}</button>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+                            )}
+                          </div>
+                          <div className="pt-1">
+                            <button className="px-3 py-1.5 text-sm rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50" disabled={!deriveBuilder.name || !deriveBuilder.startType || deriveBuilder.path.length<3 || !deriveBuilder.measureOp || (deriveBuilder.measureOp!=='count' && !deriveBuilder.measureProp)} onClick={()=>{
+                              if (!deriveBuilder.startType) return;
+                              const currentStep = currentQuery.length - 1;
+                              const endContext = deriveBuilder.path[deriveBuilder.path.length - 1];
+                              const endFilters = activeFilters.nodeFilters.filter(f => f.queryStep === currentStep && f.queryContext === endContext);
+                              computeDerivedNumeric(deriveBuilder.name, deriveBuilder.startType, deriveBuilder.path, endFilters, deriveBuilder.measureOp!, deriveBuilder.measureProp || undefined, deriveBuilder.measurePropContext || 'node');
+                              setDeriveBuilder({ active:false, stage:null, method:null, name:'', path:[], startType:null, measureType:null, measureOp:null, measureProp:null, measurePropContext:null });
+                            }}>Create Attribute</button>
+                          </div>
+                        </div>
+                      )}
+
+                      {deriveBuilder.measureType === 'categorical' && (
+                        <div className="space-y-2">
+                          <div>Return a text value from the subquery results…</div>
+                          <div className="flex items-center gap-2 text-xs">
+                            <select className="border rounded px-2 py-1" value={deriveBuilder.measureOp || 'most_frequent'} onChange={(e)=>setDeriveBuilder(prev=>({...prev, measureOp:e.target.value }))}>
+                              <option value="most_frequent">The MOST FREQUENT value of</option>
+                              <option value="single_value">The value of (single result)</option>
+                              <option value="list_distinct">A LIST of distinct values of</option>
+                            </select>
+                            <div className="flex items-center gap-2">
+                              {(() => {
+                                const endNodeType = deriveBuilder.path[deriveBuilder.path.length-1];
+                                const lastEdgeType = deriveBuilder.path.length >= 3 ? deriveBuilder.path[deriveBuilder.path.length-2] : null;
+                                const nodeProps = Array.from(new Set((graphData?.nodes||[]).filter(n=> n['Node Type']===endNodeType).flatMap(n=> Object.keys(n).filter(k=>k!=='id' && k!=='Node Type')))).slice(0,100);
+                                const edgeProps = lastEdgeType ? Array.from(new Set((graphData?.links||[]).filter(l=> l['Edge Type']===lastEdgeType).flatMap(l=> Object.keys(l).filter(k=>k!=='source' && k!=='target' && k!=='Edge Type')))) : [];
+                                const singleHop = deriveBuilder.path.length === 3;
+                                return (
+                                  <div className="flex gap-4">
+                                    <div>
+                                      <div className="text-[10px] font-mono text-vercel-gray">{endNodeType} (node)</div>
+                                      <div className="flex flex-wrap gap-1 max-w-[220px]">
+                                        {nodeProps.map(p => (
+                                          <button key={`np-cat-${p}`} className={`px-1.5 py-0.5 text-[10px] font-mono rounded border ${deriveBuilder.measureProp===p && deriveBuilder.measurePropContext==='node' ? 'bg-vercel-black text-white border-vercel-black' : 'bg-white text-vercel-black border-vercel-border hover:bg-vercel-bg'}`} onClick={()=>setDeriveBuilder(prev=>({...prev, measureProp:p, measurePropContext:'node'}))}>{p}</button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                    {lastEdgeType && (
+                                      <div>
+                                        <div className="text-[10px] font-mono text-vercel-gray">{lastEdgeType} (edge){!singleHop && ' — multi-hop not supported'}</div>
+                                        <div className="flex flex-wrap gap-1 max-w-[220px]">
+                                          {edgeProps.map(p => (
+                                            <button key={`ep-cat-${p}`} disabled={!singleHop} title={!singleHop? 'Edge property measures supported only for single-hop subqueries':''} className={`px-1.5 py-0.5 text-[10px] font-mono rounded border ${deriveBuilder.measureProp===p && deriveBuilder.measurePropContext==='edge' ? 'bg-vercel-black text-white border-vercel-black' : 'bg-white text-vercel-black border-vercel-border hover:bg-vercel-bg'} ${!singleHop ? 'opacity-50 cursor-not-allowed' : ''}`} onClick={()=> singleHop && setDeriveBuilder(prev=>({...prev, measureProp:p, measurePropContext:'edge'}))}>{p}</button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                          <div className="pt-1">
+                            <button className="px-3 py-1.5 text-xs font-mono rounded border border-vercel-black bg-vercel-black text-white hover:bg-vercel-gray disabled:opacity-30 transition-colors" disabled={!deriveBuilder.name || !deriveBuilder.startType || deriveBuilder.path.length<3 || !deriveBuilder.measureProp} onClick={()=>{
+                              if (!deriveBuilder.startType) return;
+                              const currentStep = currentQuery.length - 1;
+                              const endContext = deriveBuilder.path[deriveBuilder.path.length - 1];
+                              const endFilters = activeFilters.nodeFilters.filter(f => f.queryStep === currentStep && f.queryContext === endContext);
+                              computeDerivedCategorical(deriveBuilder.name, deriveBuilder.startType, deriveBuilder.path, endFilters, deriveBuilder.measureOp || 'most_frequent', deriveBuilder.measureProp || undefined, deriveBuilder.measurePropContext || 'node');
+                              setDeriveBuilder({ active:false, stage:null, method:null, name:'', path:[], startType:null, measureType:null, measureOp:null, measureProp:null, measurePropContext: null });
+                            }}>Create Attribute</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    </>
+                  )}
                 </div>
-              )}
             </div>
+            )}
             {showAttributesFor === 'nodes' ? (
               // Node Attributes Panel
               <AttributePanel 
@@ -1344,6 +1749,7 @@ function App() {
                 onFinalize={finalizeAllFilters}
                 onClearAll={clearAllPendingFilters}
                 partitionByNodeType={currentView === 'nodeTypes'}
+                theme={currentView === 'nodeTypes' ? 'green' : 'blue'}
               />
             ) : (
               // Edge Attributes Panel
@@ -1359,7 +1765,26 @@ function App() {
                 allPendingFilters={pendingFilters}
                 onFinalize={finalizeAllFilters}
                 onClearAll={clearAllPendingFilters}
+                theme={'green'}
               />
+            )}
+            
+            {/* Derive New Attribute Button - positioned at bottom */}
+            {!deriveBuilder.active && (
+              <div className="p-3 border-t border-vercel-border bg-white">
+                <button
+                  onClick={() => {
+                    const initialPath = selectedNodeType ? [selectedNodeType] : [];
+                    console.log('[Derive Debug] Start subquery mode', { selectedNodeType, initialPath });
+                    setDeriveBuilder({ active: true, stage: 'subquery', method: 'path', name: '', path: initialPath, startType: selectedNodeType, measureType: null, measureOp: null, measureProp: null, measurePropContext: null });
+                  }}
+                  className="w-full px-3 py-1.5 text-xs font-mono rounded bg-vercel-black text-white hover:bg-vercel-gray transition-colors inline-flex items-center justify-center gap-2"
+                  title="Derive a new attribute"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v12m6-6H6"/></svg>
+                  Derive New Attribute
+                </button>
+              </div>
             )}
           </div>
 
@@ -1387,7 +1812,7 @@ function App() {
           <div
             className={`fixed right-0 top-0 h-full w-96 z-50 transform transition-transform duration-300 ${showSavedQueries ? 'translate-x-0' : 'translate-x-full'}`}
           >
-            <div className="h-full bg-white border-l border-gray-200 shadow-xl">
+            <div className="h-full bg-white border-l border-vercel-border shadow-sm">
               <SavedQueries 
                 savedQueries={savedQueries}
                 onLoadQuery={(query: SavedQuery) => {
@@ -1418,7 +1843,7 @@ function App() {
           </div>
           {showSavedQueries && (
             <div
-              className="fixed inset-0 bg-black bg-opacity-30 z-40"
+              className="fixed inset-0 bg-vercel-black bg-opacity-20 z-40"
               onClick={() => setShowSavedQueries(false)}
             />
           )}

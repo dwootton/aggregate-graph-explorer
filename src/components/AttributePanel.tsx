@@ -40,20 +40,20 @@ const PendingFiltersOverlay: React.FC<OverlayProps> = ({ pendingFilters, onFinal
   };
 
   return (
-    <div className="absolute inset-x-0 top-0 z-10 bg-yellow-50 border-l-4 border-yellow-400 p-3 m-4 rounded-lg shadow-lg">
+    <div className="absolute inset-x-0 top-0 z-10 bg-vercel-bg border-l-2 border-vercel-black p-2 m-2 rounded shadow-sm">
       <div className="flex items-center justify-between mb-2">
         
         <div className="flex items-center gap-2">
           <button
             onClick={onFinalize}
-            className="px-3 py-1 bg-yellow-600 text-white text-sm rounded-md hover:bg-yellow-700 transition-colors inline-flex items-center gap-1"
+            className="px-3 py-1 bg-vercel-black text-white text-xs font-mono rounded hover:bg-vercel-gray transition-colors inline-flex items-center gap-1"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
             Finalize Filters
           </button>
           <button
             onClick={onClearAll}
-            className="px-3 py-1 bg-gray-300 text-gray-700 text-sm rounded-md hover:bg-gray-400 transition-colors inline-flex items-center gap-1"
+            className="px-3 py-1 bg-white border border-vercel-border text-vercel-black text-xs font-mono rounded hover:bg-vercel-bg transition-colors inline-flex items-center gap-1"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
             Clear All
@@ -64,15 +64,15 @@ const PendingFiltersOverlay: React.FC<OverlayProps> = ({ pendingFilters, onFinal
       <div className="space-y-2">
         {pendingFilters.nodeFilters.length > 0 && (
           <div>
-            <span className="text-xs font-medium text-green-700 block mb-1">Node Filters:</span>
+            <span className="text-xs font-mono text-vercel-gray block mb-1">Node Filters:</span>
             <div className="flex flex-wrap gap-2">
               {pendingFilters.nodeFilters.map((filter: Filter, index: number) => (
-                <div key={index} className="inline-flex items-center px-2 py-1 bg-green-100 text-green-800 text-xs rounded border border-green-200">
+                <div key={index} className="inline-flex items-center px-2 py-1 bg-white text-vercel-black text-xs font-mono rounded border border-vercel-border">
                   <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
                   <span>{getFilterDisplayText(filter)}</span>
                   <button
                     onClick={() => onRemoveFilter('nodeFilters', filter.attribute, filter.queryStep, filter.queryContext)}
-                    className="ml-1 text-red-500 hover:text-red-700"
+                    className="ml-1 text-vercel-gray hover:text-vercel-black"
                   >
                     ×
                   </button>
@@ -84,15 +84,15 @@ const PendingFiltersOverlay: React.FC<OverlayProps> = ({ pendingFilters, onFinal
         
         {pendingFilters.edgeFilters.length > 0 && (
           <div>
-            <span className="text-xs font-medium text-blue-700 block mb-1">Edge Filters:</span>
+            <span className="text-xs font-mono text-vercel-gray block mb-1">Edge Filters:</span>
             <div className="flex flex-wrap gap-2">
               {pendingFilters.edgeFilters.map((filter: Filter, index: number) => (
-                <div key={index} className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded border border-blue-200">
+                <div key={index} className="inline-flex items-center px-2 py-1 bg-white text-vercel-black text-xs font-mono rounded border border-vercel-border">
                   <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
                   <span>{getFilterDisplayText(filter)}</span>
                   <button
                     onClick={() => onRemoveFilter('edgeFilters', filter.attribute, filter.queryStep, filter.queryContext)}
-                    className="ml-1 text-red-500 hover:text-red-700"
+                    className="ml-1 text-vercel-gray hover:text-vercel-black"
                   >
                     ×
                   </button>
@@ -246,6 +246,17 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
     return result;
   }, [currentNodes, graphData, title]);
 
+  // Precompute groups by node type for optional partition view (always call hook)
+  const groupsByType = useMemo(() => {
+    const map = new Map<string, GraphNode[]>();
+    (currentNodes as GraphNode[]).forEach((n) => {
+      const t = String((n as any)['Node Type'] || 'Unknown');
+      if (!map.has(t)) map.set(t, []);
+      map.get(t)!.push(n);
+    });
+    return map;
+  }, [currentNodes]);
+
   // Handle filter changes with OR logic for categorical filters
   const handleFilterChange = useCallback((type: 'nodeFilters' | 'edgeFilters', filter: Partial<Filter> | null) => {
     if (!filter) {
@@ -284,16 +295,6 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
 
   // Partitioned rendering by node type (applicable when showing node attributes at root)
   if (partitionByNodeType) {
-    const groups = useMemo(() => {
-      const map = new Map<string, GraphNode[]>();
-      (currentNodes as GraphNode[]).forEach((n) => {
-        const t = String((n as any)['Node Type'] || 'Unknown');
-        if (!map.has(t)) map.set(t, []);
-        map.get(t)!.push(n);
-      });
-      return map;
-    }, [currentNodes]);
-
     return (
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 relative">
         <PendingFiltersOverlay 
@@ -307,7 +308,7 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
           <p className="text-sm text-gray-600 mt-1">{(currentNodes as any[]).length.toLocaleString()} total nodes • Partitioned by Node Type</p>
         </div>
         <div className="p-4 space-y-8">
-          {Array.from(groups.entries()).map(([type, nodes]) => {
+          {Array.from(groupsByType.entries()).map(([type, nodes]) => {
             const attrs = analyzeAttributes(nodes, type);
             const handleChange = (filter: any) => {
               if (filter) {
@@ -317,17 +318,17 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
               handleFilterChange('nodeFilters', filter);
             };
             return (
-              <div key={type} className="border rounded-md">
-                <div className="px-3 py-2 bg-gray-50 border-b flex items-center justify-between">
-                  <div className="text-sm font-medium text-gray-900">{type}</div>
-                  <div className="text-xs text-gray-600">{nodes.length.toLocaleString()} nodes • {attrs.length} attributes</div>
+              <div key={type} className="border border-vercel-border rounded">
+                <div className="px-3 py-2 bg-vercel-bg border-b border-vercel-border flex items-center justify-between">
+                  <div className="text-xs font-mono font-medium text-vercel-black">{type}</div>
+                  <div className="text-xs font-mono text-vercel-gray">{nodes.length.toLocaleString()} nodes • {attrs.length} attributes</div>
                 </div>
                 <div className="p-3 space-y-6">
                   {attrs.map((attribute: any) => (
-                    <div key={attribute.name} className="border-b border-gray-100 pb-4 last:border-b-0">
+                    <div key={attribute.name} className="border-b border-vercel-border pb-4 last:border-b-0">
                       <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-sm font-medium text-gray-900">{attribute.name}</h4>
-                        <div className="text-xs text-gray-500">{attribute.cardinality} unique</div>
+                        <h4 className="text-xs font-mono font-medium text-vercel-black">{attribute.name}</h4>
+                        <div className="text-xs font-mono text-vercel-gray">{attribute.cardinality} unique</div>
                       </div>
                       {attribute.isNumeric ? (
                         <div className="space-y-3">
@@ -336,12 +337,8 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
                             attribute={attribute}
                             onBrushChange={(f: any) => handleChange(f as Filter)}
                             currentFilter={localFilters.get(attribute.name)}
-                            theme={'blue'}
+                            theme={theme === 'green' ? 'green' : 'blue'}
                           />
-                          <div className="text-xs text-gray-600">
-                            Range: {attribute.min?.toLocaleString()} - {attribute.max?.toLocaleString()}
-                            {attribute.mean && ` • Avg: ${attribute.mean.toFixed(2)}`}
-                          </div>
                         </div>
                       ) : attribute.isHighCardinality ? (
                         <div className="space-y-2">
@@ -351,9 +348,6 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
                             onSelectionChange={(f: any) => handleChange(f as Filter)}
                             currentFilter={localFilters.get(attribute.name)}
                           />
-                          <div className="text-xs text-gray-600">
-                            {attribute.cardinality} unique values • {attribute.completeness}% complete
-                          </div>
                         </div>
                       ) : (
                         <div className="space-y-2">
@@ -370,13 +364,12 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
                               handleChange(filter);
                             }}
                             currentFilter={localFilters.get(attribute.name)}
-                            theme={'blue'}
+                            theme={theme === 'green' ? 'green' : 'blue'}
                           />
-                          <div className="text-xs text-gray-600">Click bars to filter • {attribute.completeness}% complete</div>
                         </div>
                       )}
                       {localFilters.has(attribute.name) && (
-                        <div className="mt-2 text-xs text-green-600 bg-green-50 px-2 py-1 rounded flex items-center">
+                        <div className="mt-2 text-xs font-mono text-vercel-black bg-vercel-bg px-2 py-1 rounded border border-vercel-border flex items-center">
                           <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                           <span>Added to pending filters</span>
                         </div>
@@ -393,7 +386,7 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 relative">
+    <div className="bg-white rounded shadow-sm border border-vercel-border relative">
       {/* Pending Filters Overlay */}
       <PendingFiltersOverlay 
         pendingFilters={allPendingFilters}
@@ -402,10 +395,10 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
         onClearAll={onClearAll}
       />
       
-      <div className="p-4 border-b border-gray-200 flex items-start justify-between gap-2">
+      <div className="p-3 border-b border-vercel-border flex items-start justify-between gap-2">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-          <p className="text-sm text-gray-600 mt-1">
+          <h3 className="text-sm font-mono font-semibold text-vercel-black">{title}</h3>
+          <p className="text-xs font-mono text-vercel-gray mt-1">
             {currentNodes.length.toLocaleString()} items • {attributes.length} attributes
           </p>
         </div>
@@ -416,14 +409,14 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
         </div>
       </div>
 
-      <div className="p-4 space-y-6">
+      <div className="p-3 space-y-4">
         {attributes.map((attribute: any) => (
-          <div key={attribute.name} className="border-b border-gray-100 pb-4 last:border-b-0">
+          <div key={attribute.name} className="border-b border-vercel-border pb-4 last:border-b-0">
             <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-medium text-gray-900">
+              <h4 className="text-xs font-mono font-medium text-vercel-black">
                 {attribute.name}
               </h4>
-              <div className="text-xs text-gray-500">
+              <div className="text-xs font-mono text-vercel-light-gray">
                 {attribute.cardinality} unique
               </div>
             </div>
@@ -438,10 +431,6 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
                   currentFilter={localFilters.get(attribute.name)}
                   theme={filterType === 'edgeFilters' ? 'green' : 'blue'}
                 />
-                <div className="text-xs text-gray-600">
-                  Range: {attribute.min?.toLocaleString()} - {attribute.max?.toLocaleString()}
-                  {attribute.mean && ` • Avg: ${attribute.mean.toFixed(2)}`}
-                </div>
               </div>
             ) : attribute.isHighCardinality ? (
               <div className="space-y-2">
@@ -451,9 +440,6 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
                   onSelectionChange={(filter: any) => handleFilterChange(filterType, filter as Filter)}
                   currentFilter={localFilters.get(attribute.name)}
                 />
-                <div className="text-xs text-gray-600">
-                  {attribute.cardinality} unique values • {attribute.completeness}% complete
-                </div>
               </div>
             ) : (
               <div className="space-y-2">
@@ -482,15 +468,12 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
                   currentFilter={localFilters.get(attribute.name)}
                   theme={filterType === 'edgeFilters' ? 'green' : 'blue'}
                 />
-                <div className="text-xs text-gray-600">
-                  Click bars to filter • {attribute.completeness}% complete
-                </div>
               </div>
             )}
 
             {/* Filter status indicator */}
             {localFilters.has(attribute.name) && (
-              <div className="mt-2 text-xs text-green-600 bg-green-50 px-2 py-1 rounded flex items-center">
+              <div className="mt-2 text-xs font-mono text-vercel-black bg-vercel-bg px-2 py-1 rounded border border-vercel-border flex items-center">
                 <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                 <span>Added to pending filters</span>
               </div>
@@ -499,10 +482,15 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
         ))}
         
         {attributes.length === 0 && (
-          <div className="text-center text-gray-500 py-8">
+          <div className="text-center text-xs font-mono text-vercel-light-gray py-8">
             No attributes to display
           </div>
         )}
+        
+        {/* Derive New Attribute Button */}
+        <div className="pt-4 mt-4 border-t border-vercel-border">
+          <div id="derive-button-container" />
+        </div>
       </div>
     </div>
   );

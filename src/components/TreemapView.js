@@ -12,8 +12,8 @@ const calculateTextColor = (backgroundColor) => {
   // Calculate relative luminance
   const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
   
-  // Return white text for dark backgrounds, dark text for light backgrounds
-  return luminance > 0.5 ? '#1F2937' : '#FFFFFF';
+  // Return white text for dark backgrounds, black text for light backgrounds
+  return luminance > 0.5 ? '#000000' : '#FFFFFF';
 };
 
 const TreemapView = ({
@@ -138,12 +138,12 @@ const TreemapView = ({
     svg.selectAll("*").remove();
 
     const { width, height } = dimensions;
-    const margin = { top: 80, right: 10, bottom: 10, left: 10 };
+    const margin = { top: 40, right: 10, bottom: 10, left: 10 };
     const innerWidth = width - margin.left - margin.right;
     const innerHeight = height - margin.top - margin.bottom;
     
     // Reserve more space for connector corridor
-    const connectorCorridor = 60;
+    const connectorCorridor = 32;
     const treemapHeight = innerHeight - connectorCorridor;
 
     const g = svg
@@ -160,10 +160,10 @@ const TreemapView = ({
 
     // Use settings colors if available
     // Defaults: nodes blue, edges green shades
-    const defaultNodeColor = settings?.nodeColor || '#3B82F6'; // Blue
-    const defaultEdgeColor = settings?.edgeColor || '#22C55E'; // Green
-    const greenShades = settings?.edgeTypeColors || [
-      '#E3F9E5', '#C1F2C7', '#A7EFC5', '#86EFAC', '#4ADE80', '#22C55E', '#16A34A', '#15803D', '#166534'
+    const defaultNodeColor = settings?.nodeColor || '#000000'; // Black
+    const defaultEdgeColor = settings?.edgeColor || '#f5f5f5'; // Very light gray
+    const edgeShades = settings?.edgeTypeColors || [
+      '#fafafa', '#f7f7f7', '#f5f5f5', '#f2f2f2', '#f0f0f0', '#ededed', '#ebebeb', '#e8e8e8', '#e6e6e6'
     ];
 
     if (currentView === 'nodeTypes') {
@@ -182,16 +182,16 @@ const TreemapView = ({
         id: item.type,
         label: item.type
       }));
-      // Edge type rectangles in varying green shades
-      colorScale = d3.scaleOrdinal(greenShades);
+      // Edge type rectangles all white
+      colorScale = d3.scaleOrdinal(edgeShades);
       
       // Add parent node representation
       parentNode = {
         label: selectedNodeType,
         x: innerWidth / 2 - 80,
-        y: -60,
+        y: -30,
         width: 160,
-        height: 35
+        height: 25
       };
     } else if (currentView === 'specificNodes') {
       console.time('Node Grouping');
@@ -220,9 +220,9 @@ const TreemapView = ({
       parentNode = {
         label: `${selectedNodeType} → ${selectedEdgeType}`,
         x: innerWidth / 2 - 140,
-        y: -60,
+        y: -30,
         width: 280,
-        height: 35
+        height: 25
       };
     }
 
@@ -277,10 +277,10 @@ const TreemapView = ({
         .attr('width', parentNode.width)
         .attr('height', parentNode.height)
         // Parent represents a node in edgeTypes view (blue) and an edge context in specificNodes view (green)
-        .attr('fill', currentView === 'specificNodes' ? defaultEdgeColor : defaultNodeColor)
-        .attr('stroke', d3.color(currentView === 'specificNodes' ? defaultEdgeColor : defaultNodeColor).darker(0.5))
-        .attr('stroke-width', 2)
-        .attr('rx', 8)
+        .attr('fill', currentView === 'specificNodes' ? '#f5f5f5' : defaultNodeColor)
+        .attr('stroke', '#000000')
+        .attr('stroke-width', currentView === 'specificNodes' ? 2 : 2)
+        .attr('rx', 4)
         .style('cursor', 'pointer')
         .style('filter', 'drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1))')
         .on('click', () => {
@@ -291,10 +291,10 @@ const TreemapView = ({
         .attr('x', parentNode.x + parentNode.width / 2)
         .attr('y', parentNode.y + parentNode.height / 2 + 5)
         .attr('text-anchor', 'middle')
-        .attr('font-family', 'Arial, sans-serif')
-        .attr('font-size', 14)
-        .attr('font-weight', 'bold')
-        .attr('fill', 'white')
+        .attr('font-family', 'SF Mono, Monaco, Inconsolata, Courier New, monospace')
+        .attr('font-size', 12)
+        .attr('font-weight', '600')
+        .attr('fill', currentView === 'specificNodes' ? '#000000' : 'white')
         .text(parentNode.label)
         .style('cursor', 'pointer')
         .on('click', () => {
@@ -323,40 +323,87 @@ const TreemapView = ({
 
         g.append('path')
           .attr('d', pathData)
-          .attr('stroke', defaultEdgeColor)
-          .attr('stroke-width', 2.5)
+          .attr('stroke', currentView === 'edgeTypes' ? '#cccccc' : '#666666')
+          .attr('stroke-width', 1.5)
           .attr('fill', 'none')
-          .style('opacity', 0.8)
-          .attr('stroke-dasharray', settings?.animateTransitions ? '5,5' : 'none');
+          .style('opacity', 0.6)
+          .attr('stroke-dasharray', 'none');
 
         // Add connector dots
-        // Parent connection dot
-        g.append('circle')
-          .attr('cx', parentCenterX)
-          .attr('cy', parentBottomY)
-          .attr('r', 4)
-          .attr('fill', defaultEdgeColor)
-          .attr('stroke', 'white')
-          .attr('stroke-width', 2);
-
-        // Child connection dot
+        // Child connection dot with hover and click
         g.append('circle')
           .attr('cx', childCenterX)
           .attr('cy', childTopY)
-          .attr('r', 4)
-          .attr('fill', defaultEdgeColor)
-          .attr('stroke', 'white')
-          .attr('stroke-width', 2);
+          .attr('r', 5)
+          .attr('fill', currentView === 'edgeTypes' ? '#999999' : '#666666')
+          .attr('stroke', 'none')
+          .style('cursor', 'pointer')
+          .on('mouseover', function(event) {
+            d3.select(this)
+              .attr('r', 7)
+              .attr('fill', currentView === 'edgeTypes' ? '#666666' : '#000000');
+            
+            const mouseX = event.clientX;
+            const mouseY = event.clientY;
+            
+            setTooltip({
+              show: true,
+              x: mouseX,
+              y: mouseY - 8,
+              title: d.data.label,
+              content: `${d.data.value.toLocaleString()} ${currentView === 'edgeTypes' ? 'connections' : 'nodes'}`
+            });
+          })
+          .on('mouseout', function() {
+            d3.select(this)
+              .attr('r', 5)
+              .attr('fill', currentView === 'edgeTypes' ? '#999999' : '#666666');
+            
+            setTooltip({ show: false, x: 0, y: 0, title: '', content: '' });
+          })
+          .on('click', function(event) {
+            event.stopPropagation();
+            if (currentView === 'nodeTypes') {
+              onNodeTypeClick(d.data.id);
+            } else if (currentView === 'edgeTypes') {
+              onEdgeTypeClick(d.data.id);
+            } else if (currentView === 'specificNodes' && d.data.type === 'nodeType') {
+              onNodeTypeClick(d.data.id);
+            }
+          });
       });
 
-      // Main junction dot at parent
+      // Parent connection dot
       g.append('circle')
         .attr('cx', parentCenterX)
-        .attr('cy', connectorY)
+        .attr('cy', parentBottomY)
         .attr('r', 5)
-        .attr('fill', defaultEdgeColor)
-        .attr('stroke', 'white')
-        .attr('stroke-width', 2);
+        .attr('fill', currentView === 'edgeTypes' ? '#999999' : '#666666')
+        .attr('stroke', 'none')
+        .style('cursor', 'pointer')
+        .on('mouseover', function(event) {
+          d3.select(this)
+            .attr('r', 7)
+            .attr('fill', currentView === 'edgeTypes' ? '#666666' : '#000000');
+          
+          const mouseX = event.clientX;
+          const mouseY = event.clientY;
+          
+          setTooltip({
+            show: true,
+            x: mouseX,
+            y: mouseY - 8,
+            title: parentNode.label,
+            content: 'Parent node'
+          });
+        })
+        .on('mouseout', function() {
+          d3.select(this)
+            .attr('r', 5)
+            .attr('fill', currentView === 'edgeTypes' ? '#999999' : '#666666');
+          
+          setTooltip({ show: false, x: 0, y: 0, title: '', content: '' });
+        });
       console.timeEnd('Smart Connector Lines');
     }
     console.timeEnd('Parent Node Rendering');
@@ -374,17 +421,18 @@ const TreemapView = ({
       .attr('width', d => d.x1 - d.x0)
       .attr('height', d => d.y1 - d.y0)
       .attr('fill', d => colorScale(d.data.id))
-      .attr('stroke', '#fff')
+      .attr('stroke', d => {
+        // For edge views, use black stroke; for node views, use white stroke
+        return currentView === 'edgeTypes' ? '#000000' : '#ffffff';
+      })
       .attr('stroke-width', 2)
-      .attr('rx', 8) // Increased border radius
+      .attr('rx', 4)
       .style('cursor', 'pointer')
-      .style('opacity', 0.9)
-      .style('filter', 'drop-shadow(0 3px 6px rgba(0, 0, 0, 0.12))')
+      .style('opacity', 1)
       .style('transition', settings?.animateTransitions ? 'all 0.3s ease' : 'none')
       .on('mouseover', function(event, d) {
         d3.select(this)
-          .style('opacity', 1)
-          .style('filter', 'drop-shadow(0 6px 12px rgba(0, 0, 0, 0.18))');
+          .style('opacity', 0.85);
         
         // Always show tooltip with full information
         const width = d.x1 - d.x0;
@@ -420,12 +468,11 @@ const TreemapView = ({
       })
       .on('mouseout', function(event, d) {
         d3.select(this)
-          .style('opacity', 0.9)
-          .style('filter', 'drop-shadow(0 3px 6px rgba(0, 0, 0, 0.12))');
+          .style('opacity', 1);
         setTooltip({ show: false, x: 0, y: 0, content: '', title: '' });
       })
       .on('click', function(event, d) {
-        console.log(`Treemap item clicked: ${d.data.label} (${d.data.value})`);
+        console.log('[Derive Debug] Treemap click', { view: currentView, id: d.data.id, label: d.data.label, value: d.data.value });
         if (currentView === 'nodeTypes') {
           onNodeTypeClick(d.data.id);
         } else if (currentView === 'edgeTypes') {
@@ -440,15 +487,15 @@ const TreemapView = ({
     console.time('Text Rendering');
     // Add labels with conditional rendering based on size
     cell.append('text')
-      .attr('x', 12) // Increased padding
-      .attr('y', 24)
-      .attr('font-family', 'Arial, sans-serif')
+      .attr('x', 12)
+      .attr('y', 22)
+      .attr('font-family', 'SF Mono, Monaco, Inconsolata, Courier New, monospace')
       .attr('font-size', d => {
         const width = d.x1 - d.x0;
         const height = d.y1 - d.y0;
-        return Math.min(Math.max(11, Math.min(width / 6, height / 3.5)), 20);
+        return Math.min(Math.max(11, Math.min(width / 8, height / 4)), 16);
       })
-      .attr('font-weight', 'bold')
+      .attr('font-weight', '600')
       .attr('fill', d => calculateTextColor(colorScale(d.data.id)))
       .each(function(d) {
         const width = d.x1 - d.x0;
@@ -472,19 +519,19 @@ const TreemapView = ({
     cell.append('text')
       .attr('x', 12)
       .attr('y', d => {
-        const fontSize = Math.min(Math.max(11, Math.min((d.x1 - d.x0) / 6, (d.y1 - d.y0) / 3.5)), 20);
-        return 24 + fontSize + 8;
+        const fontSize = Math.min(Math.max(11, Math.min((d.x1 - d.x0) / 8, (d.y1 - d.y0) / 4)), 16);
+        return 22 + fontSize + 6;
       })
-      .attr('font-family', 'Arial, sans-serif')
+      .attr('font-family', 'SF Mono, Monaco, Inconsolata, Courier New, monospace')
       .attr('font-size', d => {
         const width = d.x1 - d.x0;
         const height = d.y1 - d.y0;
-        return Math.min(Math.max(10, Math.min(width / 8, height / 5)), 16);
+        return Math.min(Math.max(9, Math.min(width / 10, height / 6)), 13);
       })
       .attr('fill', d => {
         const baseColor = calculateTextColor(colorScale(d.data.id));
         // Make count text slightly more subtle than main text
-        return baseColor === '#FFFFFF' ? '#E5E7EB' : '#6B7280';
+        return baseColor === '#FFFFFF' ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.6)';
       })
       .each(function(d) {
         const width = d.x1 - d.x0;
@@ -589,14 +636,14 @@ const TreemapView = ({
 
   if (isCalculating) {
     return (
-      <div className="bg-white rounded-lg shadow p-6 h-full relative flex items-center justify-center">
+      <div className="bg-white rounded shadow-sm border border-vercel-border p-6 h-full relative flex items-center justify-center">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-          <div className="text-lg font-medium text-gray-900">Calculating Edge Types...</div>
-          <div className="text-sm text-gray-600 mt-2">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-vercel-black mb-4"></div>
+          <div className="text-sm font-mono font-medium text-vercel-black">Calculating Edge Types...</div>
+          <div className="text-xs font-mono text-vercel-gray mt-2">
             {calculationProgress || `Analyzing ${selectedNodeType ? `${selectedNodeType} connections` : 'data'}`}
           </div>
-          <div className="text-xs text-gray-500 mt-4">
+          <div className="text-xs font-mono text-vercel-light-gray mt-4">
             This may take a few seconds for large datasets
           </div>
         </div>
@@ -605,14 +652,14 @@ const TreemapView = ({
   }
 
   return (
-    <div ref={containerRef} className="bg-white rounded-lg shadow p-6 h-full relative">
+    <div ref={containerRef} className="bg-white rounded shadow-sm border border-vercel-border p-3 h-full relative">
       {/* Header */}
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-3">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">
+          <h2 className="text-sm font-mono font-semibold text-vercel-black">
             {getTitle()}
           </h2>
-          <div className="text-sm text-gray-600 mt-1">
+          <div className="text-xs font-mono text-vercel-gray mt-0.5">
             {getDataCount()} {currentView === 'specificNodes' ? 'nodes' : 'types'} displayed
           </div>
         </div>
@@ -620,7 +667,7 @@ const TreemapView = ({
         {currentView !== 'nodeTypes' && onBackClick && (
           <button
             onClick={onBackClick}
-            className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
+            className="px-3 py-1.5 bg-vercel-black text-white border border-vercel-black rounded hover:bg-vercel-gray transition-colors text-xs font-mono"
           >
             ← Back
           </button>
@@ -629,11 +676,11 @@ const TreemapView = ({
 
       {/* Treemap SVG */}
       <div className="w-full" style={{ height: dimensions.height }}>
-        <svg ref={svgRef} className="w-full h-full border border-gray-200 rounded"></svg>
+        <svg ref={svgRef} className="w-full h-full border border-vercel-border rounded"></svg>
       </div>
 
       {/* Instructions */}
-      <div className="mt-4 text-sm text-gray-600">
+      <div className="mt-4 text-xs font-mono text-vercel-gray">
         {currentView === 'nodeTypes' && 'Click on a node type to see its edge types'}
         {currentView === 'edgeTypes' && 'Click on an edge type to see connected nodes'}
         {currentView === 'specificNodes' && 'Click on a node type group to explore recursively'}
@@ -642,11 +689,11 @@ const TreemapView = ({
       {/* Enhanced Tooltip */}
       {tooltip.show && (
         <div
-          className="fixed bg-gray-900 text-white px-3 py-2 rounded-lg text-sm z-50 pointer-events-none shadow-lg max-w-xs"
+          className="fixed bg-vercel-black text-white px-3 py-2 rounded border border-vercel-border text-xs font-mono z-50 pointer-events-none shadow-sm max-w-xs"
           style={{ left: tooltip.x, top: tooltip.y, transform: 'translate(-50%, -100%)' }}
         >
           <div className="font-semibold">{tooltip.title}</div>
-          <div className="text-gray-300 whitespace-pre-line">{tooltip.content}</div>
+          <div className="text-white opacity-90 whitespace-pre-line">{tooltip.content}</div>
         </div>
       )}
     </div>
