@@ -126,13 +126,13 @@ function App() {
 
   // Settings state with Vercel-inspired monochrome defaults
   const [settings, setSettings] = useState<Settings>({
-    nodeColors: ['#000000', '#1a1a1a', '#333333', '#4d4d4d', '#666666', '#808080'],
-    edgeColors: ['#fafafa', '#f7f7f7', '#f5f5f5', '#f2f2f2', '#f0f0f0', '#ededed'],
+    colorPalette: 'default',
+    nodeColor: '#10B981',
+    edgeColor: '#7C3AED',
+    nodeTypeColors: ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'],
+    edgeTypeColors: ['#7C3AED', '#EC4899', '#F97316', '#84CC16', '#6366F1', '#14B8A6'],
     showConnectors: true,
-    animateTransitions: true,
-    customNodeColors: ['#000000', '#1a1a1a', '#333333', '#4d4d4d', '#666666', '#808080'],
-    customEdgeColors: ['#fafafa', '#f7f7f7', '#f5f5f5', '#f2f2f2', '#f0f0f0', '#ededed'],
-    useCustomColors: false
+    animateTransitions: true
   });
 
   // Performance monitoring hook
@@ -377,6 +377,37 @@ function App() {
     console.log('Settings updated:', newSettings);
   }, []);
 
+  // URL state serialization/deserialization
+  const serializeStateToURL = useCallback(() => {
+    const state = {
+      view: currentView,
+      selectedNodeType,
+      selectedEdgeType,
+      currentQuery,
+      activeFilters,
+      pendingFilters,
+      showAttributesFor
+    };
+    
+    const encoded = btoa(JSON.stringify(state));
+    const url = new URL(window.location.href);
+    url.searchParams.set('state', encoded);
+    
+    return url.toString();
+  }, [currentView, selectedNodeType, selectedEdgeType, currentQuery, activeFilters, pendingFilters, showAttributesFor]);
+
+  const copyStateToClipboard = useCallback(async () => {
+    const url = serializeStateToURL();
+    try {
+      await navigator.clipboard.writeText(url);
+      console.log('URL copied to clipboard');
+      return true;
+    } catch (err) {
+      console.error('Failed to copy URL:', err);
+      return false;
+    }
+  }, [serializeStateToURL]);
+
   // Navigation helper declared later (after findConnectedNodes)
   let updateViewForPath: (path: string[]) => Promise<void>;
 
@@ -407,6 +438,31 @@ function App() {
         console.timeEnd('Graph Data Loading');
         setLoading(false);
       });
+  }, []);
+
+  // Hydrate state from URL query parameter on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const stateParam = params.get('state');
+    
+    if (stateParam) {
+      try {
+        const decoded = JSON.parse(atob(stateParam));
+        console.log('Hydrating state from URL:', decoded);
+        
+        if (decoded.view) setCurrentView(decoded.view);
+        if (decoded.selectedNodeType) setSelectedNodeType(decoded.selectedNodeType);
+        if (decoded.selectedEdgeType) setSelectedEdgeType(decoded.selectedEdgeType);
+        if (decoded.currentQuery) setCurrentQuery(decoded.currentQuery);
+        if (decoded.activeFilters) setActiveFilters(decoded.activeFilters);
+        if (decoded.pendingFilters) setPendingFilters(decoded.pendingFilters);
+        if (decoded.showAttributesFor) setShowAttributesFor(decoded.showAttributesFor);
+        
+        window.history.replaceState({}, '', window.location.pathname);
+      } catch (err) {
+        console.error('Failed to hydrate state from URL:', err);
+      }
+    }
   }, []);
 
   // Load edge type summary via Cypher when enabled
@@ -1488,6 +1544,20 @@ function App() {
                 Cache: {edgeTypeCache.size}
               </div>
               <button
+                onClick={() => setShowSavedQueries(!showSavedQueries)}
+                className="p-2 text-vercel-gray hover:text-vercel-black transition-colors relative"
+                title="Saved Queries"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                </svg>
+                {savedQueries.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-black text-red-500 text-xs font-mono rounded-full w-5 h-5 flex items-center justify-center">
+                    {savedQueries.length}
+                  </span>
+                )}
+              </button>
+              <button
                 onClick={() => setShowSettings(true)}
                 className="p-2 text-vercel-gray hover:text-vercel-black transition-colors"
                 title="Settings"
@@ -1502,16 +1572,6 @@ function App() {
         </div>
       </header>
 
-      {/* Right-side toggle handle for Saved Queries panel */}
-      <button
-        onClick={() => setShowSavedQueries(true)}
-        className={`fixed top-1/2 right-0 -translate-y-1/2 z-40 bg-white border border-vercel-border shadow-sm px-2 py-3 hover:bg-vercel-bg transition-colors ${showSavedQueries ? 'hidden' : ''}`}
-        title="Open Saved Queries"
-      >
-        <svg className="w-5 h-5 text-vercel-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5V4H2v16h5m10 0V8m0 12l-5-3-5 3V8l5 3 5-3" />
-        </svg>
-      </button>
 
       {/* Query Builder */}
       <QueryBuilder 
@@ -1525,6 +1585,7 @@ function App() {
         onSave={saveCurrentQuery}
         onToggleSavedQueries={() => setShowSavedQueries(!showSavedQueries)}
         onNavigateToQueryIndex={handleNavigateToQueryIndex}
+        onCopyURL={copyStateToClipboard}
         activeFilters={activeFilters}
         onRemoveFilter={removeActiveFilter}
         deriveStartType={deriveBuilder.active ? deriveBuilder.startType : null}

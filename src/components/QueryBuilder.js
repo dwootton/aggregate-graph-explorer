@@ -173,7 +173,8 @@ const getFilterDisplayText = (filter) => {
  *  onNavigateToQueryIndex: (index: number)=>void,
  *  activeFilters?: ActiveFilters,
  *  onRemoveFilter: (type: 'nodeFilters'|'edgeFilters', attribute: string, queryStep?: number|null)=>void,
- *  deriveStartType?: string|null
+ *  deriveStartType?: string|null,
+ *  onCopyURL?: ()=>Promise<boolean>
  * }} props
  */
 const QueryBuilder = ({ 
@@ -185,12 +186,14 @@ const QueryBuilder = ({
   onNavigateToQueryIndex,  // New prop for navigation
   activeFilters = /** @type {ActiveFilters} */({ nodeFilters: [], edgeFilters: [] }),  // New prop for filters
   onRemoveFilter,  // NEW: Callback to remove active filters
-  deriveStartType = null  // NEW: Track which node is the derive start
+  deriveStartType = null,  // NEW: Track which node is the derive start
+  onCopyURL  // NEW: Callback to copy current state to URL
 }) => {
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [queryName, setQueryName] = useState('');
   const [queryNotes, setQueryNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [urlCopied, setUrlCopied] = useState(false);
 
   const handleSave = async () => {
     if (queryName.trim()) {
@@ -255,6 +258,16 @@ const QueryBuilder = ({
     }
   };
 
+  const handleCopyURL = async () => {
+    if (onCopyURL) {
+      const success = await onCopyURL();
+      if (success) {
+        setUrlCopied(true);
+        setTimeout(() => setUrlCopied(false), 2000);
+      }
+    }
+  };
+
   return (
     <div className="bg-white border-b border-vercel-border px-4 py-2">
       <div className="max-w-7xl mx-auto">
@@ -303,9 +316,12 @@ const QueryBuilder = ({
                 onReset();
               }}
               disabled={currentQuery.length === 0}
-              className="px-3 py-1.5 text-xs font-mono text-vercel-black bg-white border border-vercel-border rounded hover:bg-vercel-bg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-1.5 text-vercel-black bg-white border border-vercel-border rounded hover:bg-vercel-bg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Reset query"
             >
-              Reset
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
             
             <button
@@ -319,18 +335,30 @@ const QueryBuilder = ({
               {isSaving ? 'Saving...' : 'Save Query'}
             </button>
 
-            <button
-              onClick={() => {
-                console.log('Saved queries panel toggled');
-                onToggleSavedQueries();
-              }}
-              className="px-3 py-1.5 text-xs font-mono text-vercel-black bg-white border border-vercel-border rounded hover:bg-vercel-bg transition-colors"
-            >
-              Saved Queries
-            </button>
-            <div className="text-xs font-mono text-vercel-light-gray">
-              {currentQuery.length > 0 && `Depth: ${currentQuery.length}`}
-            </div>
+            {onCopyURL && (
+              <button
+                onClick={handleCopyURL}
+                disabled={currentQuery.length === 0}
+                className="px-3 py-1.5 text-xs font-mono text-vercel-black bg-white border border-vercel-border rounded hover:bg-vercel-bg disabled:opacity-30 disabled:cursor-not-allowed transition-colors relative"
+                title="Copy shareable URL to clipboard"
+              >
+                {urlCopied ? (
+                  <span className="flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Copied!
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    Copy URL
+                  </span>
+                )}
+              </button>
+            )}
           </div>
         </div>
       </div>

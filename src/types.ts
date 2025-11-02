@@ -50,13 +50,13 @@ export type ViewType = 'nodeTypes' | 'edgeTypes' | 'specificNodes';
 
 // Settings Types
 export interface Settings {
-  nodeColors: string[];
-  edgeColors: string[];
+  colorPalette?: string;
+  nodeColor: string;
+  edgeColor: string;
+  nodeTypeColors: string[];
+  edgeTypeColors: string[];
   showConnectors: boolean;
   animateTransitions: boolean;
-  customNodeColors: string[];
-  customEdgeColors: string[];
-  useCustomColors: boolean;
 }
 
 // Query History Types

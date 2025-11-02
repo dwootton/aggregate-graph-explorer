@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
 const CollapsibleSection = ({ title, isOpen, onToggle, children }) => (
   <div className="border border-gray-200 rounded-lg">
