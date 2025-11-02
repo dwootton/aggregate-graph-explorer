@@ -8,9 +8,9 @@ import React, { useState } from 'react';
 
 // Nested Query Step with Expandable Filters Component
 /**
- * @param {{ step: string, index: number, activeFilters: ActiveFilters, onClick: ()=>void, onRemove: ()=>void, onRemoveFilter: (type: 'nodeFilters'|'edgeFilters', attribute: string, queryStep?: number|null, queryContext?: string|null)=>void }} props
+ * @param {{ step: string, index: number, activeFilters: ActiveFilters, onClick: ()=>void, onRemove: ()=>void, onRemoveFilter: (type: 'nodeFilters'|'edgeFilters', attribute: string, queryStep?: number|null, queryContext?: string|null)=>void, isDeriveStart?: boolean }} props
  */
-const QueryStepWithFilters = ({ step, index, activeFilters, onClick, onRemove, onRemoveFilter }) => {
+const QueryStepWithFilters = ({ step, index, activeFilters, onClick, onRemove, onRemoveFilter, isDeriveStart }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   
   // Get filters that were created specifically for this query step
@@ -24,16 +24,19 @@ const QueryStepWithFilters = ({ step, index, activeFilters, onClick, onRemove, o
   const filterType = isNodeStep ? 'nodeFilters' : 'edgeFilters';
 
   // Color code query path: nodes (even steps) = black/white, edges (odd steps) = gray
+  // Add double stroke for derive start node
   const stepColor = isNodeStep 
     ? 'bg-white border-vercel-border text-vercel-black hover:bg-vercel-bg' 
     : 'bg-vercel-bg border-vercel-border text-vercel-black hover:bg-white';
+  
+  const borderStyle = isDeriveStart ? 'border-2 border-double' : 'border';
     
   const hasFilters = relevantFilters.length > 0;
 
   return (
     <div className="flex flex-col">
       {/* Main Query Step Container */}
-      <div className={`rounded border ${stepColor} transition-all duration-200 overflow-hidden`}>
+      <div className={`rounded ${borderStyle} ${stepColor} transition-all duration-200 overflow-hidden`}>
         {/* Query Step Header */}
         <div className="flex items-center justify-between p-3">
           <div 
@@ -161,7 +164,8 @@ const getFilterDisplayText = (filter) => {
  *  onToggleSavedQueries: ()=>void,
  *  onNavigateToQueryIndex: (index: number)=>void,
  *  activeFilters?: ActiveFilters,
- *  onRemoveFilter: (type: 'nodeFilters'|'edgeFilters', attribute: string, queryStep?: number|null)=>void
+ *  onRemoveFilter: (type: 'nodeFilters'|'edgeFilters', attribute: string, queryStep?: number|null)=>void,
+ *  deriveStartType?: string|null
  * }} props
  */
 const QueryBuilder = ({ 
@@ -172,7 +176,8 @@ const QueryBuilder = ({
   onToggleSavedQueries,
   onNavigateToQueryIndex,  // New prop for navigation
   activeFilters = /** @type {ActiveFilters} */({ nodeFilters: [], edgeFilters: [] }),  // New prop for filters
-  onRemoveFilter  // NEW: Callback to remove active filters
+  onRemoveFilter,  // NEW: Callback to remove active filters
+  deriveStartType = null  // NEW: Track which node is the derive start
 }) => {
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [queryName, setQueryName] = useState('');
@@ -256,21 +261,27 @@ const QueryBuilder = ({
                 </div>
               ) : (
                 <div className="flex items-center gap-2 flex-wrap">
-                  {currentQuery.map((part, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      {index > 0 && (
-                        <div className="text-vercel-light-gray font-mono text-sm">→</div>
-                      )}
-                      <QueryStepWithFilters
-                        step={part}
-                        index={index}
-                        activeFilters={activeFilters}
-                        onClick={() => handleQueryPillClick(index)}
-                        onRemove={() => removeQueryPart(index)}
-                        onRemoveFilter={onRemoveFilter}
-                      />
-                    </div>
-                  ))}
+                  {currentQuery.map((part, index) => {
+                    const isNodeStep = index % 2 === 0;
+                    const isDeriveStart = deriveStartType && isNodeStep && part === deriveStartType;
+                    
+                    return (
+                      <div key={index} className="flex items-center gap-2">
+                        {index > 0 && (
+                          <div className="text-vercel-light-gray font-mono text-sm">→</div>
+                        )}
+                        <QueryStepWithFilters
+                          step={part}
+                          index={index}
+                          activeFilters={activeFilters}
+                          onClick={() => handleQueryPillClick(index)}
+                          onRemove={() => removeQueryPart(index)}
+                          onRemoveFilter={onRemoveFilter}
+                          isDeriveStart={isDeriveStart}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

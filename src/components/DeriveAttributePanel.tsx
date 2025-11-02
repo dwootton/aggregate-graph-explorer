@@ -13,6 +13,7 @@ type DeriveAttributePanelProps = {
   computeDerivedNumeric: (name: string, startType: string, path: string[], filters: any[], op: string, prop?: string, propContext?: "node" | "edge") => void;
   computeDerivedCategorical: (name: string, startType: string, path: string[], filters: any[], op: string, prop?: string, propContext?: "node" | "edge") => void;
   setGraphData: any;
+  onComplete?: () => void;
 };
 
 const DeriveAttributePanel: React.FC<DeriveAttributePanelProps> = ({
@@ -25,44 +26,136 @@ const DeriveAttributePanel: React.FC<DeriveAttributePanelProps> = ({
   computeDerivedBoolean,
   computeDerivedNumeric,
   computeDerivedCategorical,
-  setGraphData
+  setGraphData,
+  onComplete
 }) => {
-  const [useAdvancedMode, setUseAdvancedMode] = useState(false);
   const [expression, setExpression] = useState('');
   const [expressionError, setExpressionError] = useState<string | null>(null);
+  const [isCalculating, setIsCalculating] = useState(false);
 
-  // Get available attributes and functions
+  // Get available attributes with metadata
   const availableAttributes = React.useMemo(() => {
     if (!graphData || !deriveBuilder.startType) return [];
-    const attrs: string[] = [];
+    
+    type AttributeMetadata = {
+      name: string;
+      type: 'numeric' | 'boolean' | 'string' | 'date';
+      isNumeric: boolean;
+      isBoolean: boolean;
+      cardinality: number;
+      completeness: number;
+      min?: number;
+      max?: number;
+      mean?: number;
+      uniqueValues: any[];
+      distribution: { [key: string]: number };
+    };
+    
+    const attrMetadata: AttributeMetadata[] = [];
     
     // Add attributes from the path
     deriveBuilder.path.forEach((step: string, idx: number) => {
       const isNode = idx % 2 === 0;
       if (isNode) {
         const nodeType = step;
-        const sampleNode = graphData.nodes?.find((n: any) => n['Node Type'] === nodeType);
-        if (sampleNode) {
+        const nodesOfType = graphData.nodes?.filter((n: any) => n['Node Type'] === nodeType) || [];
+        
+        if (nodesOfType.length > 0) {
+          const sampleNode = nodesOfType[0];
           Object.keys(sampleNode).forEach(key => {
             if (key !== 'id' && key !== 'Node Type') {
-              attrs.push(`${nodeType}.${key}`);
+              const values = nodesOfType.map((n: any) => (n as any)[key]).filter((v: any) => v !== null && v !== undefined && v !== '');
+              const uniqueValues = [...new Set(values)];
+              const cardinality = uniqueValues.length;
+              const completeness = (values.length / nodesOfType.length) * 100;
+              
+              const hasNumbers = values.some((v: any) => !isNaN(v) && typeof v === 'number');
+              const hasStrings = values.some((v: any) => typeof v === 'string');
+              const isNumeric = hasNumbers && !hasStrings;
+              const isBoolean = values.every((v: any) => typeof v === 'boolean');
+              
+              let min, max, mean;
+              if (isNumeric) {
+                const numericValues = values.filter((v: any) => typeof v === 'number' && !isNaN(v));
+                min = Math.min(...numericValues);
+                max = Math.max(...numericValues);
+                mean = numericValues.reduce((a: number, b: number) => a + b, 0) / numericValues.length;
+              }
+              
+              const distribution: { [key: string]: number } = {};
+              values.forEach((v: any) => {
+                const key = String(v);
+                distribution[key] = (distribution[key] || 0) + 1;
+              });
+              
+              attrMetadata.push({
+                name: `${nodeType}.${key}`,
+                type: isNumeric ? 'numeric' : isBoolean ? 'boolean' : 'string',
+                isNumeric,
+                isBoolean,
+                cardinality,
+                completeness,
+                min,
+                max,
+                mean,
+                uniqueValues: uniqueValues.slice(0, 10),
+                distribution
+              });
             }
           });
         }
       } else {
         const edgeType = step;
-        const sampleEdge = graphData.links?.find((e: any) => e.type === edgeType);
-        if (sampleEdge) {
+        const edgesOfType = graphData.links?.filter((e: any) => e.type === edgeType) || [];
+        
+        if (edgesOfType.length > 0) {
+          const sampleEdge = edgesOfType[0];
           Object.keys(sampleEdge).forEach(key => {
             if (key !== 'source' && key !== 'target' && key !== 'type') {
-              attrs.push(`${edgeType}.${key}`);
+              const values = edgesOfType.map((e: any) => (e as any)[key]).filter((v: any) => v !== null && v !== undefined && v !== '');
+              const uniqueValues = [...new Set(values)];
+              const cardinality = uniqueValues.length;
+              const completeness = (values.length / edgesOfType.length) * 100;
+              
+              const hasNumbers = values.some((v: any) => !isNaN(v) && typeof v === 'number');
+              const hasStrings = values.some((v: any) => typeof v === 'string');
+              const isNumeric = hasNumbers && !hasStrings;
+              const isBoolean = values.every((v: any) => typeof v === 'boolean');
+              
+              let min, max, mean;
+              if (isNumeric) {
+                const numericValues = values.filter((v: any) => typeof v === 'number' && !isNaN(v));
+                min = Math.min(...numericValues);
+                max = Math.max(...numericValues);
+                mean = numericValues.reduce((a: number, b: number) => a + b, 0) / numericValues.length;
+              }
+              
+              const distribution: { [key: string]: number } = {};
+              values.forEach((v: any) => {
+                const key = String(v);
+                distribution[key] = (distribution[key] || 0) + 1;
+              });
+              
+              attrMetadata.push({
+                name: `${edgeType}.${key}`,
+                type: isNumeric ? 'numeric' : isBoolean ? 'boolean' : 'string',
+                isNumeric,
+                isBoolean,
+                cardinality,
+                completeness,
+                min,
+                max,
+                mean,
+                uniqueValues: uniqueValues.slice(0, 10),
+                distribution
+              });
             }
           });
         }
       }
     });
     
-    return [...new Set(attrs)];
+    return attrMetadata;
   }, [graphData, deriveBuilder.path, deriveBuilder.startType]);
 
   const availableFunctions = [
@@ -79,37 +172,11 @@ const DeriveAttributePanel: React.FC<DeriveAttributePanelProps> = ({
 
   return (
     <div className="space-y-3">
-      {/* Mode Toggle */}
-      {deriveBuilder.stage === 'measure' && (
-        <div className="flex items-center gap-3 text-xs font-mono">
-          <button
-            onClick={() => setUseAdvancedMode(false)}
-            className={`px-3 py-1.5 rounded border transition-colors ${
-              !useAdvancedMode
-                ? 'bg-vercel-black text-white border-vercel-black'
-                : 'bg-white text-vercel-black border-vercel-border hover:bg-vercel-bg'
-            }`}
-          >
-            Visual Builder
-          </button>
-          <button
-            onClick={() => setUseAdvancedMode(true)}
-            className={`px-3 py-1.5 rounded border transition-colors ${
-              useAdvancedMode
-                ? 'bg-vercel-black text-white border-vercel-black'
-                : 'bg-white text-vercel-black border-vercel-border hover:bg-vercel-bg'
-            }`}
-          >
-            Expression Builder
-          </button>
-        </div>
-      )}
-
       {/* Expression Builder Mode */}
-      {useAdvancedMode && deriveBuilder.stage === 'measure' && (
+      {deriveBuilder.stage === 'measure' && (
         <div className="space-y-3 p-3 border border-vercel-border rounded bg-vercel-bg">
           <div className="text-xs font-mono text-vercel-black font-semibold">
-            Advanced Expression Builder
+            Expression Builder
           </div>
           
           <div className="space-y-2">
@@ -166,8 +233,8 @@ const DeriveAttributePanel: React.FC<DeriveAttributePanelProps> = ({
               <div className="font-semibold">Available Attributes:</div>
               <div className="max-h-32 overflow-y-auto space-y-0.5">
                 {availableAttributes.map(attr => (
-                  <code key={attr} className="block px-1.5 py-0.5 bg-white border border-vercel-border rounded text-[10px]">
-                    {attr}
+                  <code key={attr.name} className="block px-1.5 py-0.5 bg-white border border-vercel-border rounded text-[10px]">
+                    {attr.name}
                   </code>
                 ))}
               </div>
@@ -176,7 +243,7 @@ const DeriveAttributePanel: React.FC<DeriveAttributePanelProps> = ({
 
           <div className="flex items-center gap-2 pt-2">
             <button
-              onClick={() => {
+              onClick={async () => {
                 console.log('[DeriveAttributePanel] Create clicked', { 
                   startType: deriveBuilder.startType, 
                   name: deriveBuilder.name, 
@@ -188,6 +255,8 @@ const DeriveAttributePanel: React.FC<DeriveAttributePanelProps> = ({
                   console.log('[DeriveAttributePanel] Early return - missing required fields');
                   return;
                 }
+                
+                setIsCalculating(true);
                 
                 const currentStep = currentQuery.length - 1;
                 const endContext = deriveBuilder.path[deriveBuilder.path.length - 1];
@@ -206,6 +275,9 @@ const DeriveAttributePanel: React.FC<DeriveAttributePanelProps> = ({
                 
                 const results = new Map<string, any>();
                 
+                // Use setTimeout to allow UI to update
+                await new Promise(resolve => setTimeout(resolve, 0));
+                
                 // Execute expression for each start node individually
                 for (const node of startNodes) {
                   console.log('[DeriveAttributePanel] Executing for node:', node.id);
@@ -223,6 +295,7 @@ const DeriveAttributePanel: React.FC<DeriveAttributePanelProps> = ({
                   if (!result.success) {
                     console.error('[DeriveAttributePanel] Execution failed:', result.error);
                     setExpressionError(result.error || 'Expression execution failed');
+                    setIsCalculating(false);
                     return;
                   }
                   
@@ -244,6 +317,8 @@ const DeriveAttributePanel: React.FC<DeriveAttributePanelProps> = ({
                   return { ...prev, nodes: updatedNodes };
                 });
                 
+                setIsCalculating(false);
+                
                 // Reset builder
                 setDeriveBuilder({ 
                   active: false, 
@@ -259,11 +334,16 @@ const DeriveAttributePanel: React.FC<DeriveAttributePanelProps> = ({
                 });
                 
                 setExpression('');
+                
+                // Call completion callback
+                if (onComplete) {
+                  onComplete();
+                }
               }}
-              disabled={!deriveBuilder.name || !expression}
+              disabled={!deriveBuilder.name || !expression || isCalculating}
               className="px-3 py-1.5 text-xs font-mono rounded border border-vercel-black bg-vercel-black text-white hover:bg-vercel-gray disabled:opacity-30 transition-colors"
             >
-              Create Attribute
+              {isCalculating ? 'Calculating...' : 'Create Attribute'}
             </button>
             <button
               onClick={() => {

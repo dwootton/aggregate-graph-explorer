@@ -59,6 +59,12 @@ function App() {
     measureOp: string | null;
     measureProp: string | null;
     measurePropContext: 'node' | 'edge' | null;
+    // Original navigation state to restore after derivation
+    originalQuery?: string[];
+    originalView?: ViewType;
+    originalSelectedNodeType?: string | null;
+    originalSelectedEdgeType?: string | null;
+    originalFilteredNodes?: GraphNode[];
   }>({ active: false, stage: null, method: null, name: '', path: [], startType: null, measureType: null, measureOp: null, measureProp: null, measurePropContext: null });
 
   // Always-fresh derive state for event handlers (e.g., D3) that may call stale closures
@@ -1521,6 +1527,7 @@ function App() {
         onNavigateToQueryIndex={handleNavigateToQueryIndex}
         activeFilters={activeFilters}
         onRemoveFilter={removeActiveFilter}
+        deriveStartType={deriveBuilder.active ? deriveBuilder.startType : null}
       />
 
       {/* Pending Filters Display */}
@@ -1565,6 +1572,20 @@ function App() {
                         computeDerivedNumeric={computeDerivedNumeric}
                         computeDerivedCategorical={computeDerivedCategorical}
                         setGraphData={setGraphData}
+                        onComplete={() => {
+                          // Navigate back to original state
+                          if (deriveBuilder.originalQuery) {
+                            console.log('[Derive] Restoring original state', {
+                              originalQuery: deriveBuilder.originalQuery,
+                              originalView: deriveBuilder.originalView
+                            });
+                            setCurrentQuery([...deriveBuilder.originalQuery]);
+                            setCurrentView(deriveBuilder.originalView || 'nodeTypes');
+                            setSelectedNodeType(deriveBuilder.originalSelectedNodeType || null);
+                            setSelectedEdgeType(deriveBuilder.originalSelectedEdgeType || null);
+                            setFilteredNodes([...(deriveBuilder.originalFilteredNodes || [])]);
+                          }
+                        }}
                       />
 
                     <div className="text-xs font-mono text-vercel-black space-y-2">
@@ -1776,7 +1797,24 @@ function App() {
                   onClick={() => {
                     const initialPath = selectedNodeType ? [selectedNodeType] : [];
                     console.log('[Derive Debug] Start subquery mode', { selectedNodeType, initialPath });
-                    setDeriveBuilder({ active: true, stage: 'subquery', method: 'path', name: '', path: initialPath, startType: selectedNodeType, measureType: null, measureOp: null, measureProp: null, measurePropContext: null });
+                    setDeriveBuilder({ 
+                      active: true, 
+                      stage: 'subquery', 
+                      method: 'path', 
+                      name: '', 
+                      path: initialPath, 
+                      startType: selectedNodeType, 
+                      measureType: null, 
+                      measureOp: null, 
+                      measureProp: null, 
+                      measurePropContext: null,
+                      // Store original state to restore after derivation
+                      originalQuery: [...currentQuery],
+                      originalView: currentView,
+                      originalSelectedNodeType: selectedNodeType,
+                      originalSelectedEdgeType: selectedEdgeType,
+                      originalFilteredNodes: [...filteredNodes]
+                    });
                   }}
                   className="w-full px-3 py-1.5 text-xs font-mono rounded bg-vercel-black text-white hover:bg-vercel-gray transition-colors inline-flex items-center justify-center gap-2"
                   title="Derive a new attribute"
