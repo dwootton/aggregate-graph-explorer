@@ -151,6 +151,14 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
   usePerformanceMonitor(`Rendering AttributePanel: ${title}`);
   
   const [localFilters, setLocalFilters] = useState<Map<string, Filter | null>>(new Map());
+  
+  // Clear local filters when all pending filters are cleared
+  React.useEffect(() => {
+    const totalPending = allPendingFilters.nodeFilters.length + allPendingFilters.edgeFilters.length;
+    if (totalPending === 0) {
+      setLocalFilters(new Map());
+    }
+  }, [allPendingFilters]);
 
   // Helper: analyze attributes for a given dataset
   const analyzeAttributes = (dataset: (GraphNode | GraphLink)[], label: string) => {

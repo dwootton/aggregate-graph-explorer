@@ -135,7 +135,9 @@ const getFilterDisplayText = (filter) => {
   let baseText;
   switch (filter.type) {
     case 'range':
-      baseText = `${filter.attribute}: ${filter.min}-${filter.max}`;
+      const minDisplay = typeof filter.min === 'number' ? Number(filter.min.toFixed(2)) : filter.min;
+      const maxDisplay = typeof filter.max === 'number' ? Number(filter.max.toFixed(2)) : filter.max;
+      baseText = `${filter.attribute}: ${minDisplay}-${maxDisplay}`;
       break;
     case 'categorical':
       const values = filter.values.length > 2 
