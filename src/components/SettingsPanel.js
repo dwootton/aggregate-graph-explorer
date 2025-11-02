@@ -34,6 +34,13 @@ const SettingsPanel = ({ onClose, settings, onSettingsChange }) => {
 
   // Color palette presets
   const colorPresets = {
+    classic: {
+      name: 'Classic',
+      nodeColor: '#000000',
+      edgeColor: '#ffffff',
+      nodeTypeColors: ['#000000', '#000000', '#000000', '#000000', '#000000', '#000000'],
+      edgeTypeColors: ['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff']
+    },
     default: {
       name: 'Default',
       nodeColor: '#10B981', // Emerald green
@@ -112,9 +119,9 @@ const SettingsPanel = ({ onClose, settings, onSettingsChange }) => {
   };
 
   const handleReset = () => {
-    const defaultPreset = colorPresets.default;
+    const defaultPreset = colorPresets.classic;
     setLocalSettings({
-      colorPalette: 'default',
+      colorPalette: 'classic',
       nodeColor: defaultPreset.nodeColor,
       edgeColor: defaultPreset.edgeColor,
       nodeTypeColors: defaultPreset.nodeTypeColors,

@@ -126,11 +126,11 @@ function App() {
 
   // Settings state with Vercel-inspired monochrome defaults
   const [settings, setSettings] = useState<Settings>({
-    colorPalette: 'default',
-    nodeColor: '#10B981',
-    edgeColor: '#7C3AED',
-    nodeTypeColors: ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'],
-    edgeTypeColors: ['#7C3AED', '#EC4899', '#F97316', '#84CC16', '#6366F1', '#14B8A6'],
+    colorPalette: 'classic',
+    nodeColor: '#000000',
+    edgeColor: '#ffffff',
+    nodeTypeColors: ['#000000', '#000000', '#000000', '#000000', '#000000', '#000000'],
+    edgeTypeColors: ['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff'],
     showConnectors: true,
     animateTransitions: true
   });
@@ -1903,6 +1903,7 @@ function App() {
               settings={settings}
               isCalculating={isCalculating}
               calculationProgress={calculationProgress}
+              edgeIndex={edgeIndex}
             />
           </div>
 

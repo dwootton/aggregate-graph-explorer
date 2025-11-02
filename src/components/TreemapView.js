@@ -28,9 +28,10 @@ const TreemapView = ({
   onNodeTypeClick,
   onEdgeTypeClick,
   onBackClick,
-  settings, // Add settings prop for colors
-  isCalculating, // Add loading state
-  calculationProgress // Add progress message
+  settings,
+  isCalculating,
+  calculationProgress,
+  edgeIndex
 }) => {
   const svgRef = useRef();
   const containerRef = useRef();
@@ -652,7 +653,20 @@ const TreemapView = ({
     );
   }
 
-  if (currentView === 'specificNodes') {
+  const hasAnyNonLeafNodes = (nodes, edgeIdx) => {
+    if (!nodes || nodes.length === 0 || !edgeIdx) return false;
+    
+    return nodes.some(node => {
+      const outgoingEdges = edgeIdx.bySource?.get(node.id) || [];
+      return outgoingEdges.length > 0;
+    });
+  };
+
+  const allNodesAreLeaves = currentView === 'specificNodes' && 
+    filteredNodes.length > 0 && 
+    !hasAnyNonLeafNodes(filteredNodes, edgeIndex);
+
+  if (allNodesAreLeaves) {
     const tableItems = filteredNodes.map(node => ({
       type: 'node',
       data: node
@@ -666,7 +680,7 @@ const TreemapView = ({
               {getTitle()}
             </h2>
             <div className="text-xs font-mono text-vercel-gray mt-0.5">
-              {filteredNodes.length} nodes displayed
+              {filteredNodes.length} leaf nodes displayed
             </div>
           </div>
           
