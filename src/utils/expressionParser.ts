@@ -11,23 +11,79 @@ type ParsedExpression = {
   attribute?: string;
   entityType?: string;
   property?: string;
+  filter?: {
+    property: string;
+    operator: '==' | '!=' | '>' | '<' | '>=' | '<=';
+    value: any;
+  };
 };
 
 /**
- * Parse an expression like "COUNT(Song)", "AVG(Person.age)", "COUNT_DISTINCT(Song.name)"
+ * Parse an expression like "COUNT(Song)", "AVG(Person.age)", "COUNT_DISTINCT(Song.name)", "COUNT(Song.single==True)"
  */
 export function parseExpression(expr: string): ParsedExpression | null {
   // Remove whitespace
   const trimmed = expr.trim();
+  console.log('[parseExpression] Input:', expr);
   
   // Match pattern: FUNCTION(EntityType.property) or FUNCTION(EntityType)
   const match = trimmed.match(/^([A-Z_]+)\(([^)]+)\)$/);
   
   if (!match) {
+    console.log('[parseExpression] No function match');
     return null;
   }
   
   const [, func, arg] = match;
+  console.log('[parseExpression] Function:', func, 'Arg:', arg);
+  
+  // Check for filter condition (e.g., Song.single==True or Song.duration>120)
+  const filterMatch = arg.match(/^([^=!<>]+)(==|!=|>=|<=|>|<)(.+)$/);
+  
+  if (filterMatch) {
+    console.log('[parseExpression] Filter match found:', filterMatch);
+    const [, leftSide, operator, rightValue] = filterMatch;
+    const parts = leftSide.trim().split('.');
+    
+    if (parts.length === 1) {
+      // EntityType with filter, like COUNT(Song==value) - not valid, needs property
+      return null;
+    } else if (parts.length === 2) {
+      // Entity.property with filter, like COUNT(Song.single==True)
+      let value: any = rightValue.trim();
+      
+      // Parse value type
+      if (value === 'True' || value === 'true') {
+        value = true;
+      } else if (value === 'False' || value === 'false') {
+        value = false;
+      } else if (value === 'null' || value === 'None') {
+        value = null;
+      } else if (!isNaN(Number(value))) {
+        value = Number(value);
+      } else if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      
+      const result = {
+        function: func,
+        entityType: parts[0],
+        property: parts[1],
+        attribute: leftSide.trim(),
+        filter: {
+          property: parts[1],
+          operator: operator as '==' | '!=' | '>' | '<' | '>=' | '<=',
+          value
+        }
+      };
+      console.log('[parseExpression] Parsed with filter:', result);
+      return result;
+    }
+    
+    return null;
+  }
+  
+  // No filter - original parsing logic
   const parts = arg.split('.');
   
   if (parts.length === 1) {
@@ -57,7 +113,8 @@ export function executeExpression(
   startType: string,
   path: string[],
   graphData: { nodes: GraphNode[]; links: GraphLink[] },
-  filters: Filter[]
+  filters: Filter[],
+  startNodeId?: string
 ): ExpressionResult {
   const parsed = parseExpression(expression);
   
@@ -80,54 +137,72 @@ export function executeExpression(
     };
   }
   
+  // Convert inline filter to Filter object if present
+  const allFilters = [...filters];
+  if (parsed.filter) {
+    const filterObj = {
+      attribute: parsed.filter.property,
+      type: (typeof parsed.filter.value === 'string' || typeof parsed.filter.value === 'boolean') ? 'categorical' as const : 'range' as const,
+      queryStep: 0,
+      queryContext: targetType,
+      ...(typeof parsed.filter.value === 'string' || typeof parsed.filter.value === 'boolean'
+        ? { values: [String(parsed.filter.value)] }
+        : getFilterRange(parsed.filter.operator, parsed.filter.value)
+      )
+    };
+    console.log('[executeExpression] Adding inline filter:', filterObj);
+    allFilters.push(filterObj);
+  }
+  console.log('[executeExpression] All filters:', allFilters);
+  
   try {
     const func = parsed.function.toUpperCase();
     
     switch (func) {
       case 'COUNT':
-        return executeCount(startType, path, graphData, filters, false);
+        return executeCount(startType, path, graphData, allFilters, false, startNodeId);
       
       case 'COUNT_DISTINCT':
         if (!parsed.property) {
           return { success: false, error: 'COUNT_DISTINCT requires a property (e.g., COUNT_DISTINCT(Song.name))' };
         }
-        return executeCountDistinct(startType, path, graphData, filters, parsed.property);
+        return executeCountDistinct(startType, path, graphData, allFilters, parsed.property, startNodeId);
       
       case 'AVG':
         if (!parsed.property) {
           return { success: false, error: 'AVG requires a property (e.g., AVG(Person.age))' };
         }
-        return executeNumericAgg(startType, path, graphData, filters, parsed.property, 'avg');
+        return executeNumericAgg(startType, path, graphData, allFilters, parsed.property, 'avg', startNodeId);
       
       case 'SUM':
         if (!parsed.property) {
           return { success: false, error: 'SUM requires a property (e.g., SUM(Album.sales))' };
         }
-        return executeNumericAgg(startType, path, graphData, filters, parsed.property, 'sum');
+        return executeNumericAgg(startType, path, graphData, allFilters, parsed.property, 'sum', startNodeId);
       
       case 'MIN':
         if (!parsed.property) {
           return { success: false, error: 'MIN requires a property (e.g., MIN(Song.duration))' };
         }
-        return executeNumericAgg(startType, path, graphData, filters, parsed.property, 'min');
+        return executeNumericAgg(startType, path, graphData, allFilters, parsed.property, 'min', startNodeId);
       
       case 'MAX':
         if (!parsed.property) {
           return { success: false, error: 'MAX requires a property (e.g., MAX(Song.duration))' };
         }
-        return executeNumericAgg(startType, path, graphData, filters, parsed.property, 'max');
+        return executeNumericAgg(startType, path, graphData, allFilters, parsed.property, 'max', startNodeId);
       
       case 'EXISTS':
-        return executeExists(startType, path, graphData, filters, false);
+        return executeExists(startType, path, graphData, allFilters, false, startNodeId);
       
       case 'NOT_EXISTS':
-        return executeExists(startType, path, graphData, filters, true);
+        return executeExists(startType, path, graphData, allFilters, true, startNodeId);
       
       case 'MOST_FREQUENT':
         if (!parsed.property) {
           return { success: false, error: 'MOST_FREQUENT requires a property (e.g., MOST_FREQUENT(Genre.name))' };
         }
-        return executeMostFrequent(startType, path, graphData, filters, parsed.property);
+        return executeMostFrequent(startType, path, graphData, allFilters, parsed.property, startNodeId);
       
       default:
         return {
@@ -143,14 +218,32 @@ export function executeExpression(
   }
 }
 
+function getFilterRange(operator: string, value: number): { min?: number; max?: number } {
+  switch (operator) {
+    case '==':
+      return { min: value, max: value };
+    case '>':
+      return { min: value + Number.EPSILON };
+    case '>=':
+      return { min: value };
+    case '<':
+      return { max: value - Number.EPSILON };
+    case '<=':
+      return { max: value };
+    default:
+      return {};
+  }
+}
+
 function executeCount(
   startType: string,
   path: string[],
   graphData: { nodes: GraphNode[]; links: GraphLink[] },
   filters: Filter[],
-  distinct: boolean
+  distinct: boolean,
+  startNodeId?: string
 ): ExpressionResult {
-  const results = traversePath(startType, path, graphData, filters);
+  const results = traversePath(startType, path, graphData, filters, startNodeId);
   
   return {
     success: true,
@@ -163,9 +256,10 @@ function executeCountDistinct(
   path: string[],
   graphData: { nodes: GraphNode[]; links: GraphLink[] },
   filters: Filter[],
-  property: string
+  property: string,
+  startNodeId?: string
 ): ExpressionResult {
-  const results = traversePath(startType, path, graphData, filters);
+  const results = traversePath(startType, path, graphData, filters, startNodeId);
   const uniqueValues = new Set(results.map(item => (item as any)[property]));
   
   return {
@@ -180,9 +274,10 @@ function executeNumericAgg(
   graphData: { nodes: GraphNode[]; links: GraphLink[] },
   filters: Filter[],
   property: string,
-  op: 'avg' | 'sum' | 'min' | 'max'
+  op: 'avg' | 'sum' | 'min' | 'max',
+  startNodeId?: string
 ): ExpressionResult {
-  const results = traversePath(startType, path, graphData, filters);
+  const results = traversePath(startType, path, graphData, filters, startNodeId);
   const values = results
     .map(item => (item as any)[property])
     .filter(v => typeof v === 'number' && !isNaN(v));
@@ -215,9 +310,10 @@ function executeExists(
   path: string[],
   graphData: { nodes: GraphNode[]; links: GraphLink[] },
   filters: Filter[],
-  negate: boolean
+  negate: boolean,
+  startNodeId?: string
 ): ExpressionResult {
-  const results = traversePath(startType, path, graphData, filters);
+  const results = traversePath(startType, path, graphData, filters, startNodeId);
   const exists = results.length > 0;
   
   return {
@@ -231,9 +327,10 @@ function executeMostFrequent(
   path: string[],
   graphData: { nodes: GraphNode[]; links: GraphLink[] },
   filters: Filter[],
-  property: string
+  property: string,
+  startNodeId?: string
 ): ExpressionResult {
-  const results = traversePath(startType, path, graphData, filters);
+  const results = traversePath(startType, path, graphData, filters, startNodeId);
   const frequencies = new Map<any, number>();
   
   results.forEach(item => {
@@ -267,12 +364,15 @@ function traversePath(
   startType: string,
   path: string[],
   graphData: { nodes: GraphNode[]; links: GraphLink[] },
-  filters: Filter[]
+  filters: Filter[],
+  startNodeId?: string
 ): (GraphNode | GraphLink)[] {
-  // Start with all nodes of the starting type
+  console.log('[traversePath] Start:', { startType, path, startNodeId, filterCount: filters.length });
+  // Start with all nodes of the starting type (or a specific node if specified)
   let currentItems: (GraphNode | GraphLink)[] = graphData.nodes.filter(
-    n => n['Node Type'] === startType
+    n => n['Node Type'] === startType && (!startNodeId || n.id === startNodeId)
   );
+  console.log('[traversePath] Initial items:', currentItems.length);
   
   // Traverse the path
   for (let i = 1; i < path.length; i++) {
@@ -302,27 +402,47 @@ function traversePath(
   }
   
   // Apply filters to final results
-  return applyFilters(currentItems, filters);
+  console.log('[traversePath] Before filters:', currentItems.length);
+  const filtered = applyFilters(currentItems, filters);
+  console.log('[traversePath] After filters:', filtered.length);
+  return filtered;
 }
 
 function applyFilters(
   items: (GraphNode | GraphLink)[],
   filters: Filter[]
 ): (GraphNode | GraphLink)[] {
+  console.log('[applyFilters] Filtering', items.length, 'items with', filters.length, 'filters');
   return items.filter(item => {
-    return filters.every(filter => {
+    const passes = filters.every(filter => {
       const value = (item as any)[filter.attribute];
+      console.log('[applyFilters] Checking filter:', { attribute: filter.attribute, type: filter.type, itemValue: value, filterValues: filter.values });
       
       switch (filter.type) {
         case 'range':
-          return value >= filter.min! && value <= filter.max!;
+          if (filter.min !== undefined && value < filter.min) return false;
+          if (filter.max !== undefined && value > filter.max) return false;
+          return true;
         case 'categorical':
-          return filter.values?.includes(value);
+          // Handle boolean and string comparison
+          const result = filter.values?.some(filterVal => {
+            if (typeof value === 'boolean') {
+              const matches = String(value) === filterVal || value === (filterVal === 'true');
+              console.log('[applyFilters] Boolean comparison:', { value, filterVal, matches });
+              return matches;
+            }
+            const matches = String(value) === filterVal;
+            console.log('[applyFilters] String comparison:', { value, filterVal, matches });
+            return matches;
+          }) ?? false;
+          console.log('[applyFilters] Categorical result:', result);
+          return result;
         case 'search':
           return String(value).toLowerCase().includes(String(filter.value).toLowerCase());
         default:
           return true;
       }
     });
+    return passes;
   });
 }

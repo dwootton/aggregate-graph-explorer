@@ -13,7 +13,7 @@ const ExpressionBuilder: React.FC<ExpressionBuilderProps> = ({
   onChange,
   availableAttributes,
   availableFunctions,
-  placeholder = 'e.g., AVG(Person.age) or COUNT(Song)'
+  placeholder = 'e.g., AVG(Person.age) or COUNT(Song.single==True)'
 }) => {
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [autocompleteItems, setAutocompleteItems] = useState<string[]>([]);

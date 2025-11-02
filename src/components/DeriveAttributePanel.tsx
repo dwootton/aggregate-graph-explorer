@@ -141,7 +141,7 @@ const DeriveAttributePanel: React.FC<DeriveAttributePanelProps> = ({
               }}
               availableAttributes={availableAttributes}
               availableFunctions={availableFunctions}
-              placeholder="e.g., AVG(Person.age) or COUNT(Song)"
+              placeholder="e.g., AVG(Person.age) or COUNT(Song.single==True)"
             />
             {expressionError && (
               <div className="text-xs font-mono text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">
@@ -177,7 +177,17 @@ const DeriveAttributePanel: React.FC<DeriveAttributePanelProps> = ({
           <div className="flex items-center gap-2 pt-2">
             <button
               onClick={() => {
-                if (!deriveBuilder.startType || !deriveBuilder.name || !expression) return;
+                console.log('[DeriveAttributePanel] Create clicked', { 
+                  startType: deriveBuilder.startType, 
+                  name: deriveBuilder.name, 
+                  expression,
+                  path: deriveBuilder.path 
+                });
+                
+                if (!deriveBuilder.startType || !deriveBuilder.name || !expression) {
+                  console.log('[DeriveAttributePanel] Early return - missing required fields');
+                  return;
+                }
                 
                 const currentStep = currentQuery.length - 1;
                 const endContext = deriveBuilder.path[deriveBuilder.path.length - 1];
@@ -185,42 +195,41 @@ const DeriveAttributePanel: React.FC<DeriveAttributePanelProps> = ({
                   f.queryStep === currentStep && f.queryContext === endContext
                 );
                 
+                console.log('[DeriveAttributePanel] Filters:', { currentStep, endContext, endFilters });
+                
                 // Execute the expression for each start node
                 const startNodes = graphData.nodes.filter(
                   (n: any) => n['Node Type'] === deriveBuilder.startType
                 );
                 
+                console.log('[DeriveAttributePanel] Start nodes:', startNodes.length);
+                
                 const results = new Map<string, any>();
                 
-                // First validate the expression
-                const testResult = executeExpression(
-                  expression,
-                  deriveBuilder.startType,
-                  deriveBuilder.path,
-                  graphData,
-                  endFilters
-                );
-                
-                if (!testResult.success) {
-                  setExpressionError(testResult.error || 'Expression execution failed');
-                  return;
-                }
-                
-                startNodes.forEach((node: any) => {
+                // Execute expression for each start node individually
+                for (const node of startNodes) {
+                  console.log('[DeriveAttributePanel] Executing for node:', node.id);
                   const result = executeExpression(
                     expression,
                     deriveBuilder.startType,
                     deriveBuilder.path,
                     graphData,
-                    endFilters
+                    endFilters,
+                    node.id
                   );
                   
-                  if (result.success) {
-                    results.set(node.id, result.value);
-                  } else {
-                    console.error(`Expression error for node ${node.id}:`, result.error);
+                  console.log('[DeriveAttributePanel] Result:', result);
+                  
+                  if (!result.success) {
+                    console.error('[DeriveAttributePanel] Execution failed:', result.error);
+                    setExpressionError(result.error || 'Expression execution failed');
+                    return;
                   }
-                });
+                  
+                  results.set(node.id, result.value);
+                }
+                
+                console.log('[DeriveAttributePanel] All results:', Array.from(results.entries()));
                 
                 // Update graph data with new attribute
                 setGraphData((prev: any) => {
