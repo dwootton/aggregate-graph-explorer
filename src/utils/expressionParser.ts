@@ -140,16 +140,34 @@ export function executeExpression(
   // Convert inline filter to Filter object if present
   const allFilters = [...filters];
   if (parsed.filter) {
-    const filterObj = {
-      attribute: parsed.filter.property,
-      type: (typeof parsed.filter.value === 'string' || typeof parsed.filter.value === 'boolean') ? 'categorical' as const : 'range' as const,
-      queryStep: 0,
-      queryContext: targetType,
-      ...(typeof parsed.filter.value === 'string' || typeof parsed.filter.value === 'boolean'
-        ? { values: [String(parsed.filter.value)] }
-        : getFilterRange(parsed.filter.operator, parsed.filter.value)
-      )
-    };
+    let filterObj: Filter;
+    
+    if (typeof parsed.filter.value === 'boolean') {
+      filterObj = {
+        attribute: parsed.filter.property,
+        type: 'categorical' as const,
+        queryStep: 0,
+        queryContext: targetType,
+        values: [String(parsed.filter.value)]
+      };
+    } else if (typeof parsed.filter.value === 'string') {
+      filterObj = {
+        attribute: parsed.filter.property,
+        type: 'categorical' as const,
+        queryStep: 0,
+        queryContext: targetType,
+        values: [parsed.filter.value]
+      };
+    } else {
+      filterObj = {
+        attribute: parsed.filter.property,
+        type: 'range' as const,
+        queryStep: 0,
+        queryContext: targetType,
+        ...getFilterRange(parsed.filter.operator, parsed.filter.value)
+      };
+    }
+    
     console.log('[executeExpression] Adding inline filter:', filterObj);
     allFilters.push(filterObj);
   }
@@ -384,8 +402,9 @@ function traversePath(
       const edgeType = step;
       const nodeIds = new Set(currentItems.map(n => (n as GraphNode).id));
       currentItems = graphData.links.filter(
-        e => e.type === edgeType && (nodeIds.has(e.source) || nodeIds.has(e.target))
+        e => e['Edge Type'] === edgeType && (nodeIds.has(e.source) || nodeIds.has(e.target))
       );
+      console.log('[traversePath] After edge step:', edgeType, 'found', currentItems.length, 'edges');
     } else {
       // Node step: find nodes of this type connected via previous edges
       const nodeType = step;
@@ -398,6 +417,7 @@ function traversePath(
       currentItems = graphData.nodes.filter(
         n => n['Node Type'] === nodeType && edgeSourceTargets.has(n.id)
       );
+      console.log('[traversePath] After node step:', nodeType, 'found', currentItems.length, 'nodes');
     }
   }
   
@@ -427,8 +447,9 @@ function applyFilters(
           // Handle boolean and string comparison
           const result = filter.values?.some(filterVal => {
             if (typeof value === 'boolean') {
-              const matches = String(value) === filterVal || value === (filterVal === 'true');
-              console.log('[applyFilters] Boolean comparison:', { value, filterVal, matches });
+              // Compare boolean to string representation
+              const matches = String(value) === filterVal;
+              console.log('[applyFilters] Boolean comparison:', { value, filterVal, stringValue: String(value), matches });
               return matches;
             }
             const matches = String(value) === filterVal;

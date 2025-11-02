@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import ExpressionBuilder from './ExpressionBuilder';
+import AttributeTooltipChart from './AttributeTooltipChart';
 import { executeExpression, parseExpression } from '../utils/expressionParser';
 
 type DeriveAttributePanelProps = {
@@ -32,6 +33,7 @@ const DeriveAttributePanel: React.FC<DeriveAttributePanelProps> = ({
   const [expression, setExpression] = useState('');
   const [expressionError, setExpressionError] = useState<string | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
+  const [hoveredAttribute, setHoveredAttribute] = useState<string | null>(null);
 
   // Get available attributes with metadata
   const availableAttributes = React.useMemo(() => {
@@ -233,9 +235,26 @@ const DeriveAttributePanel: React.FC<DeriveAttributePanelProps> = ({
               <div className="font-semibold">Available Attributes:</div>
               <div className="max-h-32 overflow-y-auto space-y-0.5">
                 {availableAttributes.map(attr => (
-                  <code key={attr.name} className="block px-1.5 py-0.5 bg-white border border-vercel-border rounded text-[10px]">
-                    {attr.name}
-                  </code>
+                  <div 
+                    key={attr.name} 
+                    className="relative"
+                    onMouseEnter={() => setHoveredAttribute(attr.name)}
+                    onMouseLeave={() => setHoveredAttribute(null)}
+                  >
+                    <code className="block px-1.5 py-0.5 bg-white border border-vercel-border rounded text-[10px] hover:bg-vercel-bg cursor-pointer transition-colors">
+                      {attr.name}
+                    </code>
+                    
+                    {hoveredAttribute === attr.name && (
+                      <div 
+                        className="absolute left-full top-0 ml-2 z-50"
+                        onMouseEnter={() => setHoveredAttribute(attr.name)}
+                        onMouseLeave={() => setHoveredAttribute(null)}
+                      >
+                        <AttributeTooltipChart attribute={attr} />
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>

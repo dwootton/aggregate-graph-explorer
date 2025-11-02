@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 
 type AttributeMetadata = {
   name: string;
@@ -37,8 +37,65 @@ const ExpressionBuilder: React.FC<ExpressionBuilderProps> = ({
 
   const allItems: (string | AttributeMetadata)[] = [...availableFunctions, ...availableAttributes];
 
+  const detectOperatorContext = (text: string, cursorPos: number): { operator: string; attributeName: string } | null => {
+    const textBeforeCursor = text.substring(0, cursorPos);
+    const operatorMatch = textBeforeCursor.match(/([\w.]+)(==|!=|>=|<=|>|<)$/);
+    
+    if (operatorMatch) {
+      return {
+        attributeName: operatorMatch[1],
+        operator: operatorMatch[2]
+      };
+    }
+    return null;
+  };
+
+  const generateValueSuggestions = (attribute: AttributeMetadata, operator: string): string[] => {
+    if (attribute.isBoolean) {
+      return ['True', 'False'];
+    } else if (attribute.isNumeric) {
+      const suggestions: string[] = [];
+      if (operator === '>' || operator === '>=') {
+        suggestions.push('0', '100', '1000');
+        if (attribute.mean) {
+          suggestions.push(Math.round(attribute.mean).toString());
+        }
+      } else if (operator === '<' || operator === '<=') {
+        if (attribute.max) {
+          suggestions.push(Math.round(attribute.max / 2).toString(), Math.round(attribute.max).toString());
+        }
+        suggestions.push('1000', '100', '10');
+      } else if (operator === '==' || operator === '!=') {
+        suggestions.push('0', '1');
+        if (attribute.mean) {
+          suggestions.push(Math.round(attribute.mean).toString());
+        }
+      }
+      return [...new Set(suggestions)];
+    } else {
+      return Object.keys(attribute.distribution).slice(0, 10);
+    }
+  };
+
   const updateAutocomplete = (text: string, cursorPos: number) => {
     const textBeforeCursor = text.substring(0, cursorPos);
+    
+    const operatorContext = detectOperatorContext(text, cursorPos);
+    
+    if (operatorContext) {
+      const attribute = availableAttributes.find(attr => attr.name === operatorContext.attributeName);
+      if (attribute) {
+        const valueSuggestions = generateValueSuggestions(attribute, operatorContext.operator);
+        if (valueSuggestions.length > 0) {
+          setAutocompleteItems(valueSuggestions);
+          setSelectedIndex(0);
+          setHoveredIndex(null);
+          setShowAutocomplete(true);
+          return;
+        }
+      }
+    }
+    
     const lastWord = textBeforeCursor.split(/[^a-zA-Z0-9._]/).pop() || '';
 
     if (lastWord.length > 0) {
@@ -85,6 +142,24 @@ const ExpressionBuilder: React.FC<ExpressionBuilderProps> = ({
     const cursorPos = inputRef.current?.selectionStart || 0;
     const textBeforeCursor = value.substring(0, cursorPos);
     const textAfterCursor = value.substring(cursorPos);
+    
+    const operatorContext = detectOperatorContext(value, cursorPos);
+    
+    if (operatorContext && typeof item === 'string') {
+      const newValue = textBeforeCursor + itemName + textAfterCursor;
+      onChange(newValue);
+      setShowAutocomplete(false);
+      
+      setTimeout(() => {
+        if (inputRef.current) {
+          const newCursorPos = cursorPos + itemName.length;
+          inputRef.current.setSelectionRange(newCursorPos, newCursorPos);
+          inputRef.current.focus();
+        }
+      }, 0);
+      return;
+    }
+    
     const lastWordStart = textBeforeCursor.split(/[^a-zA-Z0-9._]/).pop()?.length || 0;
     
     const isFunction = availableFunctions.includes(itemName);
