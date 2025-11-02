@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import ExpressionBuilder from './ExpressionBuilder';
 import AttributeTooltipChart from './AttributeTooltipChart';
-import { executeExpression, parseExpression } from '../utils/expressionParser';
+import { parseExpression } from '../utils/expressionParser';
+import { GraphQueryEngine } from '../utils/graphQueryEngine';
+import { AttributeMetadataCache } from '../utils/attributeMetadata';
 
 type DeriveAttributePanelProps = {
   deriveBuilder: any;
@@ -33,132 +35,20 @@ const DeriveAttributePanel: React.FC<DeriveAttributePanelProps> = ({
   const [expression, setExpression] = useState('');
   const [expressionError, setExpressionError] = useState<string | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [hoveredAttribute, setHoveredAttribute] = useState<string | null>(null);
 
-  // Get available attributes with metadata
-  const availableAttributes = React.useMemo(() => {
-    if (!graphData || !deriveBuilder.startType) return [];
-    
-    type AttributeMetadata = {
-      name: string;
-      type: 'numeric' | 'boolean' | 'string' | 'date';
-      isNumeric: boolean;
-      isBoolean: boolean;
-      cardinality: number;
-      completeness: number;
-      min?: number;
-      max?: number;
-      mean?: number;
-      uniqueValues: any[];
-      distribution: { [key: string]: number };
-    };
-    
-    const attrMetadata: AttributeMetadata[] = [];
-    
-    // Add attributes from the path
-    deriveBuilder.path.forEach((step: string, idx: number) => {
-      const isNode = idx % 2 === 0;
-      if (isNode) {
-        const nodeType = step;
-        const nodesOfType = graphData.nodes?.filter((n: any) => n['Node Type'] === nodeType) || [];
-        
-        if (nodesOfType.length > 0) {
-          const sampleNode = nodesOfType[0];
-          Object.keys(sampleNode).forEach(key => {
-            if (key !== 'id' && key !== 'Node Type') {
-              const values = nodesOfType.map((n: any) => (n as any)[key]).filter((v: any) => v !== null && v !== undefined && v !== '');
-              const uniqueValues = [...new Set(values)];
-              const cardinality = uniqueValues.length;
-              const completeness = (values.length / nodesOfType.length) * 100;
-              
-              const hasNumbers = values.some((v: any) => !isNaN(v) && typeof v === 'number');
-              const hasStrings = values.some((v: any) => typeof v === 'string');
-              const isNumeric = hasNumbers && !hasStrings;
-              const isBoolean = values.every((v: any) => typeof v === 'boolean');
-              
-              let min, max, mean;
-              if (isNumeric) {
-                const numericValues = values.filter((v: any) => typeof v === 'number' && !isNaN(v));
-                min = Math.min(...numericValues);
-                max = Math.max(...numericValues);
-                mean = numericValues.reduce((a: number, b: number) => a + b, 0) / numericValues.length;
-              }
-              
-              const distribution: { [key: string]: number } = {};
-              values.forEach((v: any) => {
-                const key = String(v);
-                distribution[key] = (distribution[key] || 0) + 1;
-              });
-              
-              attrMetadata.push({
-                name: `${nodeType}.${key}`,
-                type: isNumeric ? 'numeric' : isBoolean ? 'boolean' : 'string',
-                isNumeric,
-                isBoolean,
-                cardinality,
-                completeness,
-                min,
-                max,
-                mean,
-                uniqueValues: uniqueValues.slice(0, 10),
-                distribution
-              });
-            }
-          });
-        }
-      } else {
-        const edgeType = step;
-        const edgesOfType = graphData.links?.filter((e: any) => e.type === edgeType) || [];
-        
-        if (edgesOfType.length > 0) {
-          const sampleEdge = edgesOfType[0];
-          Object.keys(sampleEdge).forEach(key => {
-            if (key !== 'source' && key !== 'target' && key !== 'type') {
-              const values = edgesOfType.map((e: any) => (e as any)[key]).filter((v: any) => v !== null && v !== undefined && v !== '');
-              const uniqueValues = [...new Set(values)];
-              const cardinality = uniqueValues.length;
-              const completeness = (values.length / edgesOfType.length) * 100;
-              
-              const hasNumbers = values.some((v: any) => !isNaN(v) && typeof v === 'number');
-              const hasStrings = values.some((v: any) => typeof v === 'string');
-              const isNumeric = hasNumbers && !hasStrings;
-              const isBoolean = values.every((v: any) => typeof v === 'boolean');
-              
-              let min, max, mean;
-              if (isNumeric) {
-                const numericValues = values.filter((v: any) => typeof v === 'number' && !isNaN(v));
-                min = Math.min(...numericValues);
-                max = Math.max(...numericValues);
-                mean = numericValues.reduce((a: number, b: number) => a + b, 0) / numericValues.length;
-              }
-              
-              const distribution: { [key: string]: number } = {};
-              values.forEach((v: any) => {
-                const key = String(v);
-                distribution[key] = (distribution[key] || 0) + 1;
-              });
-              
-              attrMetadata.push({
-                name: `${edgeType}.${key}`,
-                type: isNumeric ? 'numeric' : isBoolean ? 'boolean' : 'string',
-                isNumeric,
-                isBoolean,
-                cardinality,
-                completeness,
-                min,
-                max,
-                mean,
-                uniqueValues: uniqueValues.slice(0, 10),
-                distribution
-              });
-            }
-          });
-        }
-      }
-    });
-    
-    return attrMetadata;
-  }, [graphData, deriveBuilder.path, deriveBuilder.startType]);
+  const queryEngine = useMemo(
+    () => new GraphQueryEngine(graphData),
+    [graphData]
+  );
+
+  const metadataCache = useMemo(() => new AttributeMetadataCache(), []);
+
+  const availableAttributes = useMemo(() => {
+    if (!graphData || !deriveBuilder.startType || deriveBuilder.path.length === 0) return [];
+    return metadataCache.getMetadataForPath(graphData, deriveBuilder.path);
+  }, [graphData, deriveBuilder.path, deriveBuilder.startType, metadataCache]);
 
   const availableFunctions = [
     'COUNT',
@@ -263,106 +153,73 @@ const DeriveAttributePanel: React.FC<DeriveAttributePanelProps> = ({
           <div className="flex items-center gap-2 pt-2">
             <button
               onClick={async () => {
-                console.log('[DeriveAttributePanel] Create clicked', { 
-                  startType: deriveBuilder.startType, 
-                  name: deriveBuilder.name, 
-                  expression,
-                  path: deriveBuilder.path 
-                });
-                
                 if (!deriveBuilder.startType || !deriveBuilder.name || !expression) {
-                  console.log('[DeriveAttributePanel] Early return - missing required fields');
                   return;
                 }
                 
                 setIsCalculating(true);
+                setProgress(0);
                 
-                const currentStep = currentQuery.length - 1;
-                const endContext = deriveBuilder.path[deriveBuilder.path.length - 1];
-                const endFilters = activeFilters.nodeFilters.filter((f: any) => 
-                  f.queryStep === currentStep && f.queryContext === endContext
-                );
-                
-                console.log('[DeriveAttributePanel] Filters:', { currentStep, endContext, endFilters });
-                
-                // Execute the expression for each start node
-                const startNodes = graphData.nodes.filter(
-                  (n: any) => n['Node Type'] === deriveBuilder.startType
-                );
-                
-                console.log('[DeriveAttributePanel] Start nodes:', startNodes.length);
-                
-                const results = new Map<string, any>();
-                
-                // Use setTimeout to allow UI to update
-                await new Promise(resolve => setTimeout(resolve, 0));
-                
-                // Execute expression for each start node individually
-                for (const node of startNodes) {
-                  console.log('[DeriveAttributePanel] Executing for node:', node.id);
-                  const result = executeExpression(
+                try {
+                  const currentStep = currentQuery.length - 1;
+                  const endContext = deriveBuilder.path[deriveBuilder.path.length - 1];
+                  const endFilters = activeFilters.nodeFilters.filter((f: any) => 
+                    f.queryStep === currentStep && f.queryContext === endContext
+                  );
+                  
+                  const results = await queryEngine.executeExpression(
                     expression,
                     deriveBuilder.startType,
                     deriveBuilder.path,
-                    graphData,
                     endFilters,
-                    node.id
+                    {
+                      batchSize: 100,
+                      onProgress: (pct) => setProgress(pct)
+                    }
                   );
                   
-                  console.log('[DeriveAttributePanel] Result:', result);
-                  
-                  if (!result.success) {
-                    console.error('[DeriveAttributePanel] Execution failed:', result.error);
-                    setExpressionError(result.error || 'Expression execution failed');
-                    setIsCalculating(false);
-                    return;
-                  }
-                  
-                  results.set(node.id, result.value);
-                }
-                
-                console.log('[DeriveAttributePanel] All results:', Array.from(results.entries()));
-                
-                // Update graph data with new attribute
-                setGraphData((prev: any) => {
-                  if (!prev) return prev;
-                  
-                  const updatedNodes = prev.nodes.map((n: any) => {
-                    if (n['Node Type'] !== deriveBuilder.startType) return n;
-                    const value = results.get(n.id);
-                    return { ...n, [deriveBuilder.name]: value };
+                  setGraphData((prev: any) => {
+                    if (!prev) return prev;
+                    
+                    const updatedNodes = prev.nodes.map((n: any) => {
+                      if (n['Node Type'] !== deriveBuilder.startType) return n;
+                      const value = results.get(n.id);
+                      return { ...n, [deriveBuilder.name]: value };
+                    });
+                    
+                    return { ...prev, nodes: updatedNodes };
                   });
                   
-                  return { ...prev, nodes: updatedNodes };
-                });
-                
-                setIsCalculating(false);
-                
-                // Reset builder
-                setDeriveBuilder({ 
-                  active: false, 
-                  stage: null, 
-                  method: null, 
-                  name: '', 
-                  path: [], 
-                  startType: null, 
-                  measureType: null, 
-                  measureOp: null, 
-                  measureProp: null, 
-                  measurePropContext: null 
-                });
-                
-                setExpression('');
-                
-                // Call completion callback
-                if (onComplete) {
-                  onComplete();
+                  setDeriveBuilder({ 
+                    active: false, 
+                    stage: null, 
+                    method: null, 
+                    name: '', 
+                    path: [], 
+                    startType: null, 
+                    measureType: null, 
+                    measureOp: null, 
+                    measureProp: null, 
+                    measurePropContext: null 
+                  });
+                  
+                  setExpression('');
+                  
+                  if (onComplete) {
+                    onComplete();
+                  }
+                } catch (error) {
+                  console.error('[DeriveAttributePanel] Execution failed:', error);
+                  setExpressionError(error instanceof Error ? error.message : 'Expression execution failed');
+                } finally {
+                  setIsCalculating(false);
+                  setProgress(0);
                 }
               }}
               disabled={!deriveBuilder.name || !expression || isCalculating}
               className="px-3 py-1.5 text-xs font-mono rounded border border-vercel-black bg-vercel-black text-white hover:bg-vercel-gray disabled:opacity-30 transition-colors"
             >
-              {isCalculating ? 'Calculating...' : 'Create Attribute'}
+              {isCalculating ? `Calculating... ${Math.round(progress)}%` : 'Create Attribute'}
             </button>
             <button
               onClick={() => {

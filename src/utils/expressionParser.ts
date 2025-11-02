@@ -24,24 +24,20 @@ type ParsedExpression = {
 export function parseExpression(expr: string): ParsedExpression | null {
   // Remove whitespace
   const trimmed = expr.trim();
-  console.log('[parseExpression] Input:', expr);
   
   // Match pattern: FUNCTION(EntityType.property) or FUNCTION(EntityType)
   const match = trimmed.match(/^([A-Z_]+)\(([^)]+)\)$/);
   
   if (!match) {
-    console.log('[parseExpression] No function match');
     return null;
   }
   
   const [, func, arg] = match;
-  console.log('[parseExpression] Function:', func, 'Arg:', arg);
   
   // Check for filter condition (e.g., Song.single==True or Song.duration>120)
   const filterMatch = arg.match(/^([^=!<>]+)(==|!=|>=|<=|>|<)(.+)$/);
   
   if (filterMatch) {
-    console.log('[parseExpression] Filter match found:', filterMatch);
     const [, leftSide, operator, rightValue] = filterMatch;
     const parts = leftSide.trim().split('.');
     
@@ -76,7 +72,6 @@ export function parseExpression(expr: string): ParsedExpression | null {
           value
         }
       };
-      console.log('[parseExpression] Parsed with filter:', result);
       return result;
     }
     
@@ -168,10 +163,8 @@ export function executeExpression(
       };
     }
     
-    console.log('[executeExpression] Adding inline filter:', filterObj);
     allFilters.push(filterObj);
   }
-  console.log('[executeExpression] All filters:', allFilters);
   
   try {
     const func = parsed.function.toUpperCase();
@@ -385,12 +378,10 @@ function traversePath(
   filters: Filter[],
   startNodeId?: string
 ): (GraphNode | GraphLink)[] {
-  console.log('[traversePath] Start:', { startType, path, startNodeId, filterCount: filters.length });
   // Start with all nodes of the starting type (or a specific node if specified)
   let currentItems: (GraphNode | GraphLink)[] = graphData.nodes.filter(
     n => n['Node Type'] === startType && (!startNodeId || n.id === startNodeId)
   );
-  console.log('[traversePath] Initial items:', currentItems.length);
   
   // Traverse the path
   for (let i = 1; i < path.length; i++) {
@@ -404,7 +395,6 @@ function traversePath(
       currentItems = graphData.links.filter(
         e => e['Edge Type'] === edgeType && (nodeIds.has(e.source) || nodeIds.has(e.target))
       );
-      console.log('[traversePath] After edge step:', edgeType, 'found', currentItems.length, 'edges');
     } else {
       // Node step: find nodes of this type connected via previous edges
       const nodeType = step;
@@ -417,14 +407,11 @@ function traversePath(
       currentItems = graphData.nodes.filter(
         n => n['Node Type'] === nodeType && edgeSourceTargets.has(n.id)
       );
-      console.log('[traversePath] After node step:', nodeType, 'found', currentItems.length, 'nodes');
     }
   }
   
   // Apply filters to final results
-  console.log('[traversePath] Before filters:', currentItems.length);
   const filtered = applyFilters(currentItems, filters);
-  console.log('[traversePath] After filters:', filtered.length);
   return filtered;
 }
 
@@ -432,11 +419,9 @@ function applyFilters(
   items: (GraphNode | GraphLink)[],
   filters: Filter[]
 ): (GraphNode | GraphLink)[] {
-  console.log('[applyFilters] Filtering', items.length, 'items with', filters.length, 'filters');
   return items.filter(item => {
     const passes = filters.every(filter => {
       const value = (item as any)[filter.attribute];
-      console.log('[applyFilters] Checking filter:', { attribute: filter.attribute, type: filter.type, itemValue: value, filterValues: filter.values });
       
       switch (filter.type) {
         case 'range':
@@ -448,15 +433,10 @@ function applyFilters(
           const result = filter.values?.some(filterVal => {
             if (typeof value === 'boolean') {
               // Compare boolean to string representation
-              const matches = String(value) === filterVal;
-              console.log('[applyFilters] Boolean comparison:', { value, filterVal, stringValue: String(value), matches });
-              return matches;
+              return String(value) === filterVal;
             }
-            const matches = String(value) === filterVal;
-            console.log('[applyFilters] String comparison:', { value, filterVal, matches });
-            return matches;
+            return String(value) === filterVal;
           }) ?? false;
-          console.log('[applyFilters] Categorical result:', result);
           return result;
         case 'search':
           return String(value).toLowerCase().includes(String(filter.value).toLowerCase());

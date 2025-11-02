@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
+import DataTableView from './DataTableView';
 
 // Function to calculate luminance and determine text color for contrast
 const calculateTextColor = (backgroundColor) => {
@@ -646,6 +647,41 @@ const TreemapView = ({
           <div className="text-xs font-mono text-vercel-light-gray mt-4">
             This may take a few seconds for large datasets
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (currentView === 'specificNodes') {
+    const tableItems = filteredNodes.map(node => ({
+      type: 'node',
+      data: node
+    }));
+
+    return (
+      <div ref={containerRef} className="bg-white rounded shadow-sm border border-vercel-border p-3 h-full flex flex-col">
+        <div className="flex justify-between items-center mb-3">
+          <div>
+            <h2 className="text-sm font-mono font-semibold text-vercel-black">
+              {getTitle()}
+            </h2>
+            <div className="text-xs font-mono text-vercel-gray mt-0.5">
+              {filteredNodes.length} nodes displayed
+            </div>
+          </div>
+          
+          {onBackClick && (
+            <button
+              onClick={onBackClick}
+              className="px-3 py-1.5 bg-vercel-black text-white border border-vercel-black rounded hover:bg-vercel-gray transition-colors text-xs font-mono"
+            >
+              ← Back
+            </button>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-hidden">
+          <DataTableView items={tableItems} />
         </div>
       </div>
     );

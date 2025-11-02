@@ -19,7 +19,9 @@ const PendingFiltersOverlay: React.FC<OverlayProps> = ({ pendingFilters, onFinal
     let baseText;
     switch (filter.type) {
       case 'range':
-        baseText = `${filter.attribute}: ${filter.min}-${filter.max}`;
+        const min = typeof filter.min === 'number' ? filter.min.toFixed(2) : filter.min;
+        const max = typeof filter.max === 'number' ? filter.max.toFixed(2) : filter.max;
+        baseText = `${filter.attribute}: ${min}-${max}`;
         break;
       case 'categorical':
         const values = (filter.values || []).length > 2 

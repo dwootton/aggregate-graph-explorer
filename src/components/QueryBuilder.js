@@ -24,21 +24,23 @@ const QueryStepWithFilters = ({ step, index, activeFilters, onClick, onRemove, o
   const filterType = isNodeStep ? 'nodeFilters' : 'edgeFilters';
 
   // Color code query path: nodes (even steps) = black/white, edges (odd steps) = gray
-  // Add double stroke for derive start node
-  const stepColor = isNodeStep 
-    ? 'bg-white border-vercel-border text-vercel-black hover:bg-vercel-bg' 
-    : 'bg-vercel-bg border-vercel-border text-vercel-black hover:bg-white';
+  // Invert colors and make 2x wider for derive start node
+  const stepColor = isDeriveStart
+    ? 'bg-vercel-black border-vercel-black text-white hover:bg-vercel-gray'
+    : isNodeStep 
+      ? 'bg-white border-vercel-border text-vercel-black hover:bg-vercel-bg' 
+      : 'bg-vercel-bg border-vercel-border text-vercel-black hover:bg-white';
   
-  const borderStyle = isDeriveStart ? 'border-2 border-double' : 'border';
+  const sizeStyle = isDeriveStart ? 'px-6' : 'px-3';
     
   const hasFilters = relevantFilters.length > 0;
 
   return (
     <div className="flex flex-col">
       {/* Main Query Step Container */}
-      <div className={`rounded ${borderStyle} ${stepColor} transition-all duration-200 overflow-hidden`}>
+      <div className={`rounded border ${stepColor} transition-all duration-200 overflow-hidden`}>
         {/* Query Step Header */}
-        <div className="flex items-center justify-between p-3">
+        <div className={`flex items-center justify-between py-3 ${sizeStyle}`}>
           <div 
             className="flex items-center gap-2 cursor-pointer flex-1"
             onClick={onClick}
@@ -46,7 +48,11 @@ const QueryStepWithFilters = ({ step, index, activeFilters, onClick, onRemove, o
           >
             <span className="font-mono text-sm font-medium">{step}</span>
             {hasFilters && (
-              <span className="text-xs font-mono bg-vercel-black text-white rounded-full px-2 py-0.5">
+              <span className={`text-xs font-mono rounded-full px-2 py-0.5 ${
+                isDeriveStart 
+                  ? 'bg-white text-vercel-black' 
+                  : 'bg-vercel-black text-white'
+              }`}>
                 {relevantFilters.length} filter{relevantFilters.length !== 1 ? 's' : ''}
               </span>
             )}
