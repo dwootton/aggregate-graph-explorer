@@ -1,3 +1,5 @@
+> **⚠️ WARNING:** This tool is an interactive prototype built for the VAST Challenge. We do not claim a superior code quality, but we believe it implements a vision for how graph exploration tools could work.
+
 # INCREMENT
 
 INCREMENT is an interactive graph exploration tool that provides a tool for constructing graph queries through a natural, incremental process. 
