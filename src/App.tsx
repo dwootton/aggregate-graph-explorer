@@ -1364,11 +1364,15 @@ function App() {
     <div className="min-h-screen bg-white">
       {/* Header */}
       <header className="bg-white border-b border-vercel-border">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-2">
-            <h1 className="text-xl font-mono font-semibold text-vercel-black tracking-tight">
-              Aggregated Graph Explorer
-            </h1>
+            <button 
+              onClick={resetQuery}
+              className="text-xl font-mono font-semibold text-vercel-black tracking-tight flex items-center gap-2 hover:opacity-70 transition-opacity"
+            >
+              INCREMENT
+              {/* <img src="/Vector.svg" alt="Increment" className="w-6 h-6" /> */}
+            </button>
             <div className="flex items-center gap-4">
               <div className="text-xs font-mono text-vercel-gray">
                 {graphData.nodes?.length || 0} nodes · {graphData.links?.length || 0} edges

@@ -24,10 +24,12 @@ const PathTableView: React.FC<PathTableViewProps> = ({ paths }) => {
     distance: { min?: number; max?: number } | null;
     startNodes: Set<string>;
     endNodes: Set<string>;
+    excludedEdgeTypes: Set<string>;
   }>({
     distance: null,
     startNodes: new Set(),
-    endNodes: new Set()
+    endNodes: new Set(),
+    excludedEdgeTypes: new Set()
   });
   
   const [showFilters, setShowFilters] = useState(false);
@@ -61,6 +63,20 @@ const PathTableView: React.FC<PathTableViewProps> = ({ paths }) => {
     
     if (filters.endNodes.size > 0) {
       filtered = filtered.filter(p => filters.endNodes.has(p.endNode.id));
+    }
+    
+    if (filters.excludedEdgeTypes.size > 0) {
+      filtered = filtered.filter(p => {
+        for (const item of p.path) {
+          if ('Edge Type' in item) {
+            const edge = item as GraphLink;
+            if (filters.excludedEdgeTypes.has(edge['Edge Type'])) {
+              return false;
+            }
+          }
+        }
+        return true;
+      });
     }
     
     setCurrentPage(1);
@@ -194,6 +210,36 @@ const PathTableView: React.FC<PathTableViewProps> = ({ paths }) => {
     );
   };
 
+  const edgeTypeData = useMemo(() => {
+    const edgeTypeCounts: Record<string, number> = {};
+    paths.forEach(p => {
+      const edgeTypesInPath = new Set<string>();
+      p.path.forEach(item => {
+        if ('Edge Type' in item) {
+          edgeTypesInPath.add((item as GraphLink)['Edge Type']);
+        }
+      });
+      edgeTypesInPath.forEach(edgeType => {
+        edgeTypeCounts[edgeType] = (edgeTypeCounts[edgeType] || 0) + 1;
+      });
+    });
+    return Object.entries(edgeTypeCounts).map(([edgeType, count]) => ({
+      edgeType,
+      count
+    }));
+  }, [paths]);
+
+  const edgeTypeAttribute = useMemo(() => ({
+    name: 'edgeType',
+    type: 'string' as const,
+    isNumeric: false,
+    isBoolean: false,
+    cardinality: edgeTypeData.length,
+    completeness: 100,
+    uniqueValues: edgeTypeData.map(d => d.edgeType),
+    distribution: {}
+  }), [edgeTypeData]);
+
   if (paths.length === 0) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -205,7 +251,7 @@ const PathTableView: React.FC<PathTableViewProps> = ({ paths }) => {
     );
   }
 
-  const hasActiveFilters = filters.distance !== null || filters.startNodes.size > 0 || filters.endNodes.size > 0;
+  const hasActiveFilters = filters.distance !== null || filters.startNodes.size > 0 || filters.endNodes.size > 0 || filters.excludedEdgeTypes.size > 0;
 
   return (
     <div className="h-full flex flex-col bg-white border border-vercel-border rounded">
@@ -234,7 +280,7 @@ const PathTableView: React.FC<PathTableViewProps> = ({ paths }) => {
             </button>
             {hasActiveFilters && (
               <button
-                onClick={() => setFilters({ distance: null, startNodes: new Set(), endNodes: new Set() })}
+                onClick={() => setFilters({ distance: null, startNodes: new Set(), endNodes: new Set(), excludedEdgeTypes: new Set() })}
                 className="px-2 py-1 text-xs font-mono bg-white border border-vercel-border text-vercel-black rounded hover:bg-vercel-bg transition-colors"
               >
                 Clear Filters
@@ -247,7 +293,7 @@ const PathTableView: React.FC<PathTableViewProps> = ({ paths }) => {
       {/* Filters Panel */}
       {showFilters && (
         <div className="border-b border-vercel-border bg-white p-4">
-          <div className="grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-4 gap-6">
             {/* Distance Filter */}
             <div>
               <div className="text-xs font-mono font-medium text-vercel-black mb-3">
@@ -336,6 +382,33 @@ const PathTableView: React.FC<PathTableViewProps> = ({ paths }) => {
                   queryStep: 0,
                   queryContext: '',
                   values: Array.from(filters.endNodes)
+                } : undefined}
+              />
+            </div>
+            
+            {/* Edge Type Filter */}
+            <div>
+              <div className="text-xs font-mono font-medium text-vercel-black mb-2">
+                Exclude Edge Types
+              </div>
+              <div className="text-[10px] font-mono text-vercel-gray mb-3">
+                {edgeTypeAttribute.cardinality} unique edge types
+              </div>
+              <CustomSearch
+                data={edgeTypeData}
+                attribute={edgeTypeAttribute}
+                onSelectionChange={(selectedValues: string[]) => {
+                  setFilters(prev => ({
+                    ...prev,
+                    excludedEdgeTypes: new Set(selectedValues)
+                  }));
+                }}
+                currentFilter={filters.excludedEdgeTypes.size > 0 ? {
+                  attribute: 'edgeType',
+                  type: 'categorical' as const,
+                  queryStep: 0,
+                  queryContext: '',
+                  values: Array.from(filters.excludedEdgeTypes)
                 } : undefined}
               />
             </div>

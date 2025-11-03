@@ -88,17 +88,23 @@ export class AttributeMetadataCache {
     }
     
     const metadata: AttributeMetadata[] = [];
-    const sampleNode = nodesOfType[0];
+    const allKeys = new Set<string>();
     
-    Object.keys(sampleNode).forEach(key => {
-      if (key !== 'id' && key !== 'Node Type') {
-        const attrMetadata = this.computeAttributeStats(
-          nodesOfType,
-          key,
-          `${nodeType}.${key}`
-        );
-        metadata.push(attrMetadata);
-      }
+    nodesOfType.forEach(node => {
+      Object.keys(node).forEach(key => {
+        if (key !== 'id' && key !== 'Node Type') {
+          allKeys.add(key);
+        }
+      });
+    });
+    
+    allKeys.forEach(key => {
+      const attrMetadata = this.computeAttributeStats(
+        nodesOfType,
+        key,
+        `${nodeType}.${key}`
+      );
+      metadata.push(attrMetadata);
     });
     
     this.nodeTypeCache.set(nodeType, metadata);
@@ -120,17 +126,23 @@ export class AttributeMetadataCache {
     }
     
     const metadata: AttributeMetadata[] = [];
-    const sampleEdge = edgesOfType[0];
+    const allKeys = new Set<string>();
     
-    Object.keys(sampleEdge).forEach(key => {
-      if (key !== 'source' && key !== 'target' && key !== 'type' && key !== 'Edge Type') {
-        const attrMetadata = this.computeAttributeStats(
-          edgesOfType,
-          key,
-          `${edgeType}.${key}`
-        );
-        metadata.push(attrMetadata);
-      }
+    edgesOfType.forEach(edge => {
+      Object.keys(edge).forEach(key => {
+        if (key !== 'source' && key !== 'target' && key !== 'type' && key !== 'Edge Type') {
+          allKeys.add(key);
+        }
+      });
+    });
+    
+    allKeys.forEach(key => {
+      const attrMetadata = this.computeAttributeStats(
+        edgesOfType,
+        key,
+        `${edgeType}.${key}`
+      );
+      metadata.push(attrMetadata);
     });
     
     this.edgeTypeCache.set(edgeType, metadata);
