@@ -1,7 +1,22 @@
 {
-  "name": "graph-explorer",
-  "version": "0.1.0",
-  "private": true,
+  "name": "increment",
+  "version": "1.0.0",
+  "description": "An interactive graph exploration tool for incremental navigation and analysis of connected data",
+  "private": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/increment.git"
+  },
+  "author": "Racquel Fygenson and Dylan Wootton",
+  "keywords": [
+    "graph",
+    "visualization",
+    "exploration",
+    "neo4j",
+    "treemap",
+    "network-analysis"
+  ],
   "dependencies": {
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.6.4",

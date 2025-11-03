@@ -770,13 +770,6 @@ function App() {
           nodesToSave = filteredNodes;
         }
         
-        console.log('[connect] Saving query:', {
-          name,
-          currentView,
-          nodesToSaveCount: nodesToSave.length,
-          sampleNodeTypes: [...new Set(nodesToSave.slice(0, 10).map(n => n['Node Type']))]
-        });
-        
         const newQuery = {
           id: Date.now(),
           name,
