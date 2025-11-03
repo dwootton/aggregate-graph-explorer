@@ -1,6 +1,6 @@
 # INCREMENT
 
-INCREMENT is an interactive graph exploration tool that transforms how we navigate and analyze connected data. Rather than relying on rigid queries or predetermined visualizations, INCREMENT treats graph exploration as a natural, incremental process. You start broad and progressively refine your view by selecting node types, edge types, and applying filters, building up queries step by step through direct interaction with the data.
+INCREMENT is an interactive graph exploration tool that provides a tool for constructing graph queries through a natural, incremental process. 
 
 ![INCREMENT Interface](interface-2.png)
 
@@ -8,35 +8,9 @@ INCREMENT is an interactive graph exploration tool that transforms how we naviga
 
 ## What Makes INCREMENT Different
 
-Most graph tools force you to write queries upfront or present you with overwhelming node-link diagrams. INCREMENT takes a different approach: it guides you through the graph structure itself. You begin by seeing all node types as proportionally-sized tiles in a treemap. Click a node type, and you see its connected edge types. Click an edge type, and you see the specific nodes. Each step reveals the next natural choice, letting the data structure guide your exploration.
+Many graph tools require you to write queries ahead of time or show you complicated diagrams. INCREMENT is different: it lets you explore your graph one step at a time, starting with a simple view of all node types. As you click through node types and edge types, the interface shows you the next relevant options, guiding you naturally through the graph.
 
-This incremental approach means you don't need to know the graph schema in advance. The interface adapts as you navigate, showing relevant attributes, counts, and connections at each step. Filters can be applied at any point and carry forward through subsequent steps, creating sophisticated queries without writing a single line of code.
-
-## Key Features
-
-**Incremental Navigation**: Explore graphs through a natural drill-down pattern: node types → edge types → specific nodes → and beyond. Each step reveals only the relevant next choices.
-
-**Visual Proportional Encoding**: Treemaps show node and edge type distributions proportionally, making it immediately clear where the data density lies.
-
-**Contextual Filtering**: Apply filters at any navigation step. Filters remain scoped to their context and cascade through subsequent queries, enabling complex multi-step refinements.
-
-**Derived Attributes**: Build new node attributes by defining subgraph patterns. For example, create a boolean attribute "has_suspicious_connection" or a numeric attribute "count_of_related_events" through visual pattern building rather than writing code.
-
-**Query Composition**: Save intermediate query results and compose them using set operations (union, intersection, difference) or path-finding operations (connect two sets of nodes through the graph).
-
-**Cypher Backend Support** (Optional): For larger graphs, INCREMENT can compile queries to Cypher and execute them against a Neo4j database, providing the same incremental exploration interface with backend performance.
-
-## Use Cases
-
-INCREMENT was designed for investigative analysis and sense-making in domains where relationships matter. Some example scenarios:
-
-- **Investigative journalism**: Navigate networks of people, organizations, transactions, and events to uncover hidden patterns
-- **Network analysis**: Explore social, biological, or infrastructure networks to understand structure and identify key nodes
-- **Knowledge graphs**: Browse interconnected concepts, documents, and entities to find relevant information
-- **Fraud detection**: Trace suspicious patterns across accounts, transactions, and entities
-- **Provenance tracking**: Follow chains of influence, attribution, or causation through connected data
-
-The tool is domain-agnostic and works with any graph data that can be represented as typed nodes and typed edges with attributes.
+You don’t need to know the graph’s structure before you start. The interface updates as you go, showing useful details and connections at each step. You can add filters whenever you want, and they will carry forward, making it easy to build complex queries without any code.
 
 ## Getting Started
 
