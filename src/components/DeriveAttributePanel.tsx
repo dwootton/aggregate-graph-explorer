@@ -209,7 +209,6 @@ const DeriveAttributePanel: React.FC<DeriveAttributePanelProps> = ({
                     onComplete();
                   }
                 } catch (error) {
-                  console.error('[DeriveAttributePanel] Execution failed:', error);
                   setExpressionError(error instanceof Error ? error.message : 'Expression execution failed');
                 } finally {
                   setIsCalculating(false);

@@ -49,7 +49,6 @@ const prop = (key: string) => `\`${key}\``;
 const buildNodeWhere = (alias: string, filters: Filter[], params: Record<string, any>) => {
   const clauses: string[] = [];
   filters.forEach((f, i) => {
-    const kBase = `${alias}_f${i}`;
     const key = `${alias}_${sanitize(f.attribute)}_${i}`;
     switch (f.type) {
       case 'range': {
@@ -248,7 +247,6 @@ const getDriver = async () => {
   const enabled = process.env.REACT_APP_USE_CYPHER_BACKEND === 'true';
   if (!enabled) return null;
   if (!uri || !user || !password) {
-    console.warn('Cypher backend enabled but missing REACT_APP_NEO4J_* env vars');
     return null;
   }
   try {
@@ -258,7 +256,6 @@ const getDriver = async () => {
     _driver = (neo4j as any).driver(uri, (neo4j as any).auth.basic(user, password));
     return _driver;
   } catch (e) {
-    console.error('Failed to init neo4j-driver. Did you install it?', e);
     return null;
   }
 };

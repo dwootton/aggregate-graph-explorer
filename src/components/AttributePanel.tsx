@@ -109,12 +109,10 @@ const PendingFiltersOverlay: React.FC<OverlayProps> = ({ pendingFilters, onFinal
 };
 
 // Performance monitor hook
-const usePerformanceMonitor = (name: string) => {
-  const start = performance.now();
+const usePerformanceMonitor = () => {
   React.useEffect(() => {
     return () => {
-      const end = performance.now();
-      console.log(`${name}: ${(end - start).toFixed(3)}ms`);
+      // Performance monitoring removed
     };
   });
 };
@@ -150,7 +148,7 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
   partitionByNodeType = false,
   theme = 'blue'
 }) => {
-  usePerformanceMonitor(`Rendering AttributePanel: ${title}`);
+  usePerformanceMonitor();
   
   const [localFilters, setLocalFilters] = useState<Map<string, Filter | null>>(new Map());
   
@@ -164,9 +162,7 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
 
   // Helper: analyze attributes for a given dataset
   const analyzeAttributes = (dataset: (GraphNode | GraphLink)[], label: string) => {
-    console.time(`Attribute Analysis: ${title} [${label}]`);
     if (!dataset || !graphData) {
-      console.timeEnd(`Attribute Analysis: ${title} [${label}]`);
       return [] as any[];
     }
 
@@ -239,20 +235,15 @@ const AttributePanel: React.FC<AttributePanelProps> = ({
       };
     });
 
-    console.timeEnd(`Attribute Analysis: ${title} [${label}]`);
     return result;
   };
 
   // Memoized attribute analysis for performance
   const attributes = useMemo<any[]>(() => {
-    console.time(`Attribute Analysis: ${title}`);
     if (!currentNodes || !graphData) {
-      console.timeEnd(`Attribute Analysis: ${title}`);
       return [];
     }
     const result = analyzeAttributes(currentNodes as (GraphNode | GraphLink)[], 'all');
-    console.log(`Attribute analysis completed for ${title}:`, result.map(r => r.name));
-    console.timeEnd(`Attribute Analysis: ${title}`);
     return result;
   }, [currentNodes, graphData, title]);
 

@@ -28,7 +28,6 @@ const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => 
 
   const handleOperation = (operation) => {
     const selected = getSelectedQueries();
-    console.log(`Performing ${operation} on:`, selected);
     // TODO: Implement actual graph operations
     // This would be where you'd implement union, intersection, etc.
     alert(`${operation} operation would be performed on ${selected.length} queries`);

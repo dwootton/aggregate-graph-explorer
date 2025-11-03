@@ -294,7 +294,7 @@ export const CustomSearch = ({
   const [selectedValues, setSelectedValues] = useState(new Set(currentFilter?.values || []));
   
   // Get unique values and their counts
-  const { uniqueValues, filteredValues } = useMemo(() => {
+  const { filteredValues } = useMemo(() => {
     const valueCounts = {};
     data.forEach(d => {
       const value = d[attribute.name];
@@ -310,7 +310,7 @@ export const CustomSearch = ({
       value.toLowerCase().includes(searchTerm.toLowerCase())
     ).slice(0, 50); // Limit to 50 results
     
-    return { uniqueValues, filteredValues };
+    return { filteredValues };
   }, [data, attribute.name, searchTerm]);
   
   const handleValueToggle = useCallback((value) => {

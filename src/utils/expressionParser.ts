@@ -122,7 +122,6 @@ export function executeExpression(
   
   // Get the target entity type (last item in path)
   const targetType = path[path.length - 1];
-  const isTargetNode = path.length % 2 === 1;
   
   // Validate entity type matches
   if (parsed.entityType !== targetType) {

@@ -17,10 +17,8 @@ import {
   ViewType,
   Settings,
   QueryHistoryEntry,
-  EdgeIndex,
   NodeTypeSummary,
   EdgeTypeSummary,
-  AttributeAnalysis,
   SavedQuery
 } from './types';
 
@@ -74,13 +72,6 @@ function App() {
   // Derive debug: watch path updates
   useEffect(() => {
     if (!deriveBuilder.active) return;
-    console.log('[Derive Debug] path update', {
-      path: deriveBuilder.path,
-      length: deriveBuilder.path.length,
-      endsOnNode: deriveBuilder.path.length % 2 === 1,
-      startType: deriveBuilder.startType,
-      stage: deriveBuilder.stage
-    });
   }, [deriveBuilder.path]);
 
   // Derive Debug: active/stage transitions
@@ -88,11 +79,9 @@ function App() {
   const prevDeriveStageRef = useRef<typeof deriveBuilder.stage>(deriveBuilder.stage);
   useEffect(() => {
     if (prevDeriveActiveRef.current !== deriveBuilder.active) {
-      console.log('[Derive Debug] active changed', { from: prevDeriveActiveRef.current, to: deriveBuilder.active });
       prevDeriveActiveRef.current = deriveBuilder.active;
     }
     if (prevDeriveStageRef.current !== deriveBuilder.stage) {
-      console.log('[Derive Debug] stage changed', { from: prevDeriveStageRef.current, to: deriveBuilder.stage });
       prevDeriveStageRef.current = deriveBuilder.stage;
     }
   }, [deriveBuilder.active, deriveBuilder.stage]);
@@ -102,8 +91,6 @@ function App() {
     if (!deriveBuilder.active || deriveBuilder.stage !== 'subquery') return;
     const len = deriveBuilder.path.length;
     const endsOnNode = len % 2 === 1;
-    const disabled = len < 3 || !endsOnNode;
-    console.log('[Derive Debug] finalize state', { disabled, len, endsOnNode, path: deriveBuilder.path });
   }, [deriveBuilder.path, deriveBuilder.stage, deriveBuilder.active]);
 
   // NEW: Scoped Filter state management
@@ -121,7 +108,6 @@ function App() {
 
   // View/selection debug
   useEffect(() => {
-    console.log('[Derive Debug] view/selection change', { currentView, selectedNodeType, selectedEdgeType, showAttributesFor });
   }, [currentView, selectedNodeType, selectedEdgeType, showAttributesFor]);
 
   // Settings state with Vercel-inspired monochrome defaults
@@ -142,13 +128,11 @@ function App() {
     
     useEffect(() => {
       const now = Date.now();
-      const timeSinceLastChange = now - startTime.current;
       
       // Check if dependencies actually changed
       const depsChanged = dependencies.some((dep: any, index: number) => dep !== lastDeps.current[index]);
       
       if (depsChanged) {
-        console.log(`${name} re-render: ${timeSinceLastChange}ms since last change`);
         startTime.current = now;
         lastDeps.current = dependencies;
       }
@@ -162,8 +146,6 @@ function App() {
   const edgeIndex = useMemo(() => {
     if (!graphData || !graphData.links) return { bySource: new Map(), byTarget: new Map() };
     
-    console.time('Building Edge Index');
-    console.log('Building edge index for fast lookups...');
     
     const bySource = new Map();
     const byTarget = new Map();
@@ -182,12 +164,6 @@ function App() {
       byTarget.get(link.target).push(link);
     });
     
-    console.log('Edge index built:', {
-      sourceNodes: bySource.size,
-      targetNodes: byTarget.size,
-      totalLinks: graphData.links.length
-    });
-    console.timeEnd('Building Edge Index');
     
     return { bySource, byTarget };
   }, [graphData]);
@@ -199,115 +175,19 @@ function App() {
   const nodeMap = useMemo(() => {
     if (!graphData?.nodes) return new Map();
     
-    console.time('Building Node Map');
     const map = new Map();
     graphData.nodes.forEach(node => {
       map.set(node.id, node);
     });
-    console.log(`Node map built: ${map.size} nodes`);
-    console.timeEnd('Building Node Map');
     
     return map;
   }, [graphData]);
 
-  // OPTIMIZED: Fast edge types calculation using index and caching
-  const getConnectedEdgeTypes = useCallback((nodeType: string): EdgeTypeSummary[] => {
-    if (cypherEnabled) {
-      return edgeTypeSummaryCypher;
-    }
-    if (!graphData || !graphData.links || !nodeType) return [];
-    
-    // Check cache FIRST - return immediately if found
-    if (edgeTypeCache.has(nodeType)) {
-      console.log(`Cache hit for edge types: ${nodeType}`);
-      return edgeTypeCache.get(nodeType);
-    }
-    
-    // Show loading for heavy calculations
-    const nodeCount = graphData.nodes.filter(n => n['Node Type'] === nodeType).length;
-    if (nodeCount > 5000) {
-      setIsCalculating(true);
-      setCalculationProgress(`Analyzing ${nodeCount.toLocaleString()} ${nodeType} nodes...`);
-    }
-    
-    console.time(`Edge Types for ${nodeType}`);
-    console.log(`Calculating edge types for ${nodeType} (using optimized index)...`);
-    
-    // Get node IDs for this type (create a Set for O(1) lookup)
-    const nodeIds = new Set<string>(
-      graphData.nodes
-        .filter(node => node['Node Type'] === nodeType)
-        .map(node => node.id)
-    );
-    
-    console.log(`Found ${nodeIds.size} nodes of type ${nodeType}`);
-    
-    const edgeTypeCounts = new Map<string, number>();
-    const connectedNodeTypes = new Map<string, Set<string>>();
-    
-    // Use edge index for much faster lookup
-    let processed = 0;
-    for (const nodeId of nodeIds) {
-      // Update progress for large datasets
-      if (nodeIds.size > 5000 && processed % 1000 === 0) {
-        setCalculationProgress(`Processing ${processed.toLocaleString()}/${nodeIds.size.toLocaleString()} nodes...`);
-      }
-      
-      // Get edges where this node is source
-      const sourceEdges = edgeIndex.bySource.get(nodeId) || [];
-      // Get edges where this node is target  
-      const targetEdges = edgeIndex.byTarget.get(nodeId) || [];
-      
-      // Process all connected edges
-      [...sourceEdges, ...targetEdges].forEach(link => {
-        const edgeType = link['Edge Type'] || 'Unknown';
-        edgeTypeCounts.set(edgeType, (edgeTypeCounts.get(edgeType) || 0) + 1);
-        
-        if (!connectedNodeTypes.has(edgeType)) {
-          connectedNodeTypes.set(edgeType, new Set());
-        }
-        
-        // OPTIMIZED: Use node map for O(1) lookup instead of find()
-        const otherNodeId = link.source === nodeId ? link.target : link.source;
-        const otherNode = nodeMap.get(otherNodeId);
-        
-        if (otherNode && otherNode['Node Type'] !== nodeType) {
-          connectedNodeTypes.get(edgeType)!.add(otherNode['Node Type']);
-        }
-      });
-      
-      processed++;
-    }
-
-    const result = Array.from(edgeTypeCounts.entries()).map(([type, count]) => ({
-      type,
-      count,
-      connectedNodeTypes: Array.from(connectedNodeTypes.get(type) || [])
-    }));
-    
-    // Cache the result for future use
-    edgeTypeCache.set(nodeType, result);
-    
-    // Clear loading state
-    setIsCalculating(false);
-    setCalculationProgress('');
-    
-    console.log(`Edge types calculated for ${nodeType}:`, {
-      uniqueEdgeTypes: result.length,
-      totalConnections: Array.from(edgeTypeCounts.values()).reduce((a, b) => a + b, 0),
-      cacheSize: edgeTypeCache.size
-    });
-    console.timeEnd(`Edge Types for ${nodeType}`);
-    
-    return result as EdgeTypeSummary[];
-  }, [cypherEnabled, edgeTypeSummaryCypher, graphData, edgeIndex, edgeTypeCache, nodeMap]);
 
   // NEW: Get connected edge types from a specific set of nodes (for filtering support)
   const getConnectedEdgeTypesFromNodes = useCallback((nodeType: string, specificNodes: GraphNode[]): EdgeTypeSummary[] => {
     if (!graphData || !graphData.links || !specificNodes.length) return [];
     
-    console.time(`Filtered Edge Types for ${nodeType}`);
-    console.log(`Calculating edge types for ${specificNodes.length} filtered ${nodeType} nodes...`);
     
     // Create a Set of node IDs for O(1) lookup
     const nodeIds = new Set<string>(specificNodes.map((node: GraphNode) => node.id));
@@ -346,12 +226,6 @@ function App() {
       connectedNodeTypes: Array.from(connectedNodeTypes.get(type) || [])
     }));
     
-    console.log(`Filtered edge types calculated for ${nodeType}:`, {
-      inputNodes: specificNodes.length,
-      uniqueEdgeTypes: result.length,
-      totalConnections: Array.from(edgeTypeCounts.values()).reduce((a, b) => a + b, 0)
-    });
-    console.timeEnd(`Filtered Edge Types for ${nodeType}`);
     
     return result as EdgeTypeSummary[];
   }, [graphData, edgeIndex, nodeMap]);
@@ -365,7 +239,6 @@ function App() {
       try {
         setSettings(JSON.parse(savedSettings));
       } catch (error) {
-        console.error('Error loading settings:', error);
       }
     }
   }, []);
@@ -374,7 +247,6 @@ function App() {
   const handleSettingsChange = useCallback((newSettings: Settings) => {
     setSettings(newSettings);
     localStorage.setItem('graphExplorerSettings', JSON.stringify(newSettings));
-    console.log('Settings updated:', newSettings);
   }, []);
 
   // URL state serialization/deserialization
@@ -400,10 +272,8 @@ function App() {
     const url = serializeStateToURL();
     try {
       await navigator.clipboard.writeText(url);
-      console.log('URL copied to clipboard');
       return true;
     } catch (err) {
-      console.error('Failed to copy URL:', err);
       return false;
     }
   }, [serializeStateToURL]);
@@ -413,29 +283,16 @@ function App() {
 
   // Load graph data
   useEffect(() => {
-    console.time('Graph Data Loading');
-    console.log('Starting graph data fetch...');
     
     fetch('/MC1_graph.json')
       .then(response => {
-        console.log('Graph data response received, parsing JSON...');
-        console.time('JSON Parsing');
         return response.json();
       })
       .then(data => {
-        console.timeEnd('JSON Parsing');
-        console.log('Graph data loaded:', {
-          nodes: data.nodes?.length || 0,
-          links: data.links?.length || 0,
-          totalSize: JSON.stringify(data).length
-        });
         setGraphData(data);
         setLoading(false);
-        console.timeEnd('Graph Data Loading');
       })
       .catch(error => {
-        console.error('Error loading graph data:', error);
-        console.timeEnd('Graph Data Loading');
         setLoading(false);
       });
   }, []);
@@ -448,7 +305,6 @@ function App() {
     if (stateParam) {
       try {
         const decoded = JSON.parse(atob(stateParam));
-        console.log('Hydrating state from URL:', decoded);
         
         if (decoded.view) setCurrentView(decoded.view);
         if (decoded.selectedNodeType) setSelectedNodeType(decoded.selectedNodeType);
@@ -460,7 +316,6 @@ function App() {
         
         window.history.replaceState({}, '', window.location.pathname);
       } catch (err) {
-        console.error('Failed to hydrate state from URL:', err);
       }
     }
   }, []);
@@ -474,7 +329,6 @@ function App() {
         const result = await CypherService.edgeTypesForNodeType(selectedNodeType, activeFilters);
         setEdgeTypeSummaryCypher(result);
       } catch (e) {
-        console.warn('Cypher edge type summary failed, falling back to in-memory', e);
         setEdgeTypeSummaryCypher([]);
       }
     };
@@ -491,7 +345,6 @@ function App() {
         const mapped: NodeTypeSummary[] = summary.map(s => ({ type: s.type, count: s.count as number, examples: [] as GraphNode[] }));
         setNodeTypeSummaryCypher(mapped);
       } catch (e) {
-        console.warn('Cypher node type summary failed, falling back to in-memory', e);
         setNodeTypeSummaryCypher([]);
       }
     };
@@ -507,7 +360,6 @@ function App() {
           const edges = await CypherService.edgesByType(selectedEdgeType);
           setCurrentEdgesCypher(edges);
         } catch (e) {
-          console.warn('Cypher edgesByType failed', e);
           setCurrentEdgesCypher([]);
         }
       } else {
@@ -523,8 +375,6 @@ function App() {
   const applyFiltersToNodes = useCallback((nodes: GraphNode[], filters: Filter[]) => {
     if (!filters || filters.length === 0) return nodes;
     
-    console.time('Apply Node Filters');
-    console.log(`Applying ${filters.length} filters to ${nodes.length} nodes`);
     
     const filtered = nodes.filter((node: GraphNode) => {
       return filters.every((filter: Filter) => {
@@ -549,16 +399,12 @@ function App() {
       });
     });
     
-    console.log(`Filtered ${nodes.length} to ${filtered.length} nodes`);
-    console.timeEnd('Apply Node Filters');
     return filtered;
   }, []);
 
   const applyFiltersToEdges = useCallback((edges: GraphLink[], filters: Filter[]) => {
     if (!filters || filters.length === 0) return edges;
     
-    console.time('Apply Edge Filters');
-    console.log(`Applying ${filters.length} filters to ${edges.length} edges`);
     
     const filtered = edges.filter((edge: GraphLink) => {
       return filters.every((filter: Filter) => {
@@ -579,8 +425,6 @@ function App() {
       });
     });
     
-    console.log(`Filtered ${edges.length} to ${filtered.length} edges`);
-    console.timeEnd('Apply Edge Filters');
     return filtered;
   }, []);
 
@@ -588,7 +432,6 @@ function App() {
   const applyCascadingFilters = useCallback((nodes: GraphNode[], queryPath: string[]) => {
     if (!queryPath || queryPath.length === 0) return nodes;
     
-    console.log(`Applying cascading filters through query path: ${queryPath.join(' → ')}`);
     let filteredNodes = [...nodes];
     
     // Walk through the query path and apply filters progressively
@@ -601,9 +444,7 @@ function App() {
       );
       
       if (stepFilters.length > 0) {
-        console.log(`Step ${stepIndex} (${stepContext}): Applying ${stepFilters.length} filters`);
         filteredNodes = applyFiltersToNodes(filteredNodes, stepFilters);
-        console.log(`After step ${stepIndex}: ${filteredNodes.length} nodes remaining`);
       }
     }
     
@@ -619,8 +460,6 @@ function App() {
     }
     if (!graphData) return [];
     
-    console.time(`Find Connected Nodes: ${fromNodeType} → ${edgeType}`);
-    console.log(`Finding nodes connected via ${fromNodeType} → ${edgeType} (with cascading filters)...`);
     
     // Use base nodes if provided (for maintaining filters), otherwise use all nodes of type
     let sourceNodes = baseNodes 
@@ -630,11 +469,9 @@ function App() {
     // Apply cascading filters to source nodes if no baseNodes provided
     if (!baseNodes && currentQuery.length > 0) {
       sourceNodes = applyCascadingFilters(sourceNodes, currentQuery);
-      console.log(`Applied cascading filters to source nodes: ${sourceNodes.length} remaining`);
     }
     
     const sourceNodeIds = new Set(sourceNodes.map(node => node.id));
-    console.log(`Source nodes: ${sourceNodeIds.size} (filtered from ${baseNodes ? baseNodes.length : 'all'})`);
     
     const connectedNodeIds = new Set<string>();
 
@@ -655,17 +492,12 @@ function App() {
       connectedNodeIds.has(node.id) && node['Node Type'] !== fromNodeType
     );
     
-    console.log(`Connected nodes found: ${result.length} nodes`, {
-      uniqueTargetTypes: [...new Set(result.map(n => n['Node Type']))]
-    });
-    console.timeEnd(`Find Connected Nodes: ${fromNodeType} → ${edgeType}`);
     
     return result;
   }, [cypherEnabled, graphData, edgeIndex, applyCascadingFilters, currentQuery]);
 
   // Now define updateViewForPath with access to findConnectedNodes
   updateViewForPath = useCallback(async (path: string[]) => {
-    console.log('[Path Debug] updateViewForPath', { path, length: path.length });
     if (!path || path.length === 0) {
       setSelectedNodeType(null);
       setSelectedEdgeType(null);
@@ -676,7 +508,6 @@ function App() {
     }
     if (path.length === 1) {
       const nodeType = path[0];
-      console.log('[Path Debug] show edge types for', nodeType);
       setSelectedNodeType(nodeType);
       setSelectedEdgeType(null);
       setCurrentView('edgeTypes');
@@ -687,7 +518,6 @@ function App() {
     if (path.length >= 2) {
       const nodeType = path[0];
       const edgeType = path[1];
-      console.log('[Path Debug] show specific nodes for', { nodeType, edgeType });
       setSelectedNodeType(nodeType);
       setSelectedEdgeType(edgeType);
       setCurrentView('specificNodes');
@@ -701,7 +531,6 @@ function App() {
           setFilteredNodes(nodes);
         }
       } catch (e) {
-        console.warn('[Path Debug] failed to load connected nodes, falling back', e);
         const nodes = findConnectedNodes(nodeType, edgeType);
         setFilteredNodes(nodes);
       }
@@ -712,13 +541,6 @@ function App() {
      // Handle node type selection with context preservation
    const handleNodeTypeClick = useCallback((nodeType: string) => {
      const d = deriveRef.current;
-     console.log('[Derive Debug] handleNodeTypeClick fired', {
-       nodeType,
-       deriveActive: d.active,
-       deriveMethod: d.method,
-       currentView,
-       path: d.path
-     });
      if (d.active && d.method === 'path') {
        setDeriveBuilder(prev => {
          const nextPath = [...prev.path];
@@ -726,21 +548,16 @@ function App() {
          // If no start type set, seed with node
          if (nextPath.length === 0) {
            nextPath.push(nodeType);
-           console.log('[Derive Debug] Add start node', { nodeType, path: nextPath });
            return { ...prev, startType: nodeType, path: nextPath, stage: prev.stage || 'subquery' };
          }
          // Only add node after an edge
          if (lastIsEdge) {
            nextPath.push(nodeType);
-           console.log('[Derive Debug] Add node after edge', { nodeType, path: nextPath });
          } else {
-           console.log('[Derive Debug] Ignored node click (expecting edge next)', { nodeType, path: nextPath });
          }
          return { ...prev, path: nextPath };
        });
      }
-     console.time(`Node Type Click: ${nodeType}`);
-     console.log(`Node type clicked: ${nodeType} (from view: ${currentView})`);
      
      // Save current state to history
      setQueryHistory(prev => [...prev, {
@@ -755,17 +572,28 @@ function App() {
      setShowAttributesFor('nodes');
 
      if (currentView === 'specificNodes') {
-       // In recursive mode: maintain the existing context but explore this new node type
-       // This preserves any previous filters while exploring the new node type
-       console.log(`Recursive navigation: maintaining ${filteredNodes.length} filtered nodes`);
-       setSelectedNodeType(nodeType);
-       setSelectedEdgeType(null);
-       setCurrentQuery([...currentQuery, nodeType]); // Append instead of replace
-       setCurrentView('edgeTypes');
-       // Keep filteredNodes as context for the new exploration
+       // Check if this node type has any outgoing edges (is it a leaf type?)
+       const nodesOfType = filteredNodes.filter((n: GraphNode) => n['Node Type'] === nodeType);
+       const hasOutgoingEdges = nodesOfType.some((node: GraphNode) => {
+         const outgoing = edgeIndex.bySource?.get(node.id) || [];
+         return outgoing.length > 0;
+       });
+       
+       if (!hasOutgoingEdges) {
+         // Leaf nodes - filter to this type and stay in specificNodes view for table display
+         setFilteredNodes(nodesOfType);
+         setSelectedNodeType(nodeType);
+         // Don't change view - let table view render
+       } else {
+         // Has edges - navigate to explore them
+         setSelectedNodeType(nodeType);
+         setSelectedEdgeType(null);
+         setCurrentQuery([...currentQuery, nodeType]); // Append instead of replace
+         setCurrentView('edgeTypes');
+         setFilteredNodes([]);
+       }
      } else {
        // Normal navigation from nodeTypes view
-       console.log('Normal navigation: resetting context');
        setSelectedNodeType(nodeType);
        setSelectedEdgeType(null);
        setCurrentQuery([nodeType]);
@@ -773,34 +601,22 @@ function App() {
        setFilteredNodes([]);
      }
      
-     console.timeEnd(`Node Type Click: ${nodeType}`);
    }, [currentView, selectedNodeType, selectedEdgeType, currentQuery, filteredNodes]);
 
      // Handle edge type selection with recursive capability
    const handleEdgeTypeClick = useCallback((edgeType: string) => {
      const d = deriveRef.current;
-     console.log('[Derive Debug] handleEdgeTypeClick fired', {
-       edgeType,
-       deriveActive: d.active,
-       deriveMethod: d.method,
-       currentView,
-       path: d.path
-     });
      if (d.active && d.method === 'path') {
        setDeriveBuilder(prev => {
          const nextPath = [...prev.path];
          const lastIsNode = nextPath.length > 0 && (nextPath.length % 2 === 1);
          if (lastIsNode) {
            nextPath.push(edgeType);
-           console.log('[Derive Debug] Add edge after node', { edgeType, path: nextPath });
          } else {
-           console.log('[Derive Debug] Ignored edge click (need a node first)', { edgeType, path: nextPath });
          }
          return { ...prev, path: nextPath };
        });
      }
-     console.time(`Edge Type Click: ${edgeType}`);
-     console.log(`Edge type clicked: ${edgeType}`);
      
      // Save current state to history
      setQueryHistory(prev => [...prev, {
@@ -821,8 +637,6 @@ function App() {
      // Find nodes connected through this edge type, respecting current context
      const baseContext = currentView === 'edgeTypes' ? null : filteredNodes;
      if (!selectedNodeType) {
-       console.warn('No selectedNodeType; cannot find connected nodes.');
-     console.timeEnd(`Edge Type Click: ${edgeType}`);
        return;
      }
      if (cypherEnabled) {
@@ -832,7 +646,6 @@ function App() {
            const nodes = await CypherService.connectedNodes([selectedNodeType, edgeType], activeFilters);
            setFilteredNodes(nodes);
          } catch (e) {
-           console.warn('Cypher connectedNodes failed, falling back to in-memory', e);
            const connectedNodes = findConnectedNodes(selectedNodeType, edgeType, baseContext);
            setFilteredNodes(connectedNodes);
          }
@@ -842,13 +655,10 @@ function App() {
        setFilteredNodes(connectedNodes);
      }
      
-     console.timeEnd(`Edge Type Click: ${edgeType}`);
    }, [cypherEnabled, currentView, selectedNodeType, currentQuery, filteredNodes, findConnectedNodes, activeFilters]);
 
      // Handle clicking on query pills for navigation
    const handleNavigateToQueryIndex = useCallback((clickedIndex: number) => {
-     console.time(`Query Navigation to Index ${clickedIndex}`);
-     console.log(`Navigating to query index ${clickedIndex}`);
      
      const targetQuery = currentQuery.slice(0, clickedIndex + 1);
      
@@ -875,7 +685,6 @@ function App() {
              const nodes = await CypherService.connectedNodes([nodeType, edgeType], activeFilters);
              setFilteredNodes(nodes);
            } catch (e) {
-             console.warn('Cypher connectedNodes failed in navigation; falling back', e);
              const connectedNodes = findConnectedNodes(nodeType, edgeType);
              setFilteredNodes(connectedNodes);
            }
@@ -889,12 +698,10 @@ function App() {
      // Clear query history since we're jumping to a specific state
      setQueryHistory([]);
      
-     console.timeEnd(`Query Navigation to Index ${clickedIndex}`);
    }, [cypherEnabled, currentQuery, findConnectedNodes, activeFilters]);
 
      // Handle query reset
   const resetQuery = useCallback(() => {
-    console.log('Resetting query to initial state');
     setCurrentQuery([]);
     setQueryHistory([]);
     setSelectedNodeType(null);
@@ -909,7 +716,6 @@ function App() {
 
    // Handle back navigation
    const handleBackClick = useCallback(() => {
-     console.log('Back button clicked');
      if (queryHistory.length === 0) {
        // No history, go to start
        resetQuery();
@@ -935,8 +741,6 @@ function App() {
 
   // Save current query (made async to prevent freezing)
   const saveCurrentQuery = useCallback(async (name: string, notes: string = ''): Promise<void> => {
-    console.time('Save Query');
-    console.log(`Saving query: ${name}`);
     
     return new Promise<void>((resolve) => {
       // Use setTimeout to make this async and prevent UI freezing
@@ -960,8 +764,6 @@ function App() {
         };
         setSavedQueries((prev: SavedQuery[]) => [...prev, newQuery]);
         setShowSavedQueries(true);
-        console.log('Query saved successfully');
-        console.timeEnd('Save Query');
         resolve();
       }, 0);
     });
@@ -1016,22 +818,12 @@ function App() {
     setGraphData({ ...graphData, nodes: updatedNodes });
   }, [graphData, edgeIndex, applyFiltersToNodes]);
 
-  const computeDerivedCount = useCallback((name: string, scopeType: string) => {
-    if (!graphData) return;
-    const updatedNodes = graphData.nodes.map(n => {
-      if (n['Node Type'] !== scopeType) return n;
-      const deg = (edgeIndex.bySource.get(n.id)?.length || 0) + (edgeIndex.byTarget.get(n.id)?.length || 0);
-      return { ...n, [name]: deg } as GraphNode;
-    });
-    setGraphData({ ...graphData, nodes: updatedNodes });
-  }, [graphData, edgeIndex]);
 
   // Build subquery results per start node using forward traversal
   const buildSubqueryResults = useCallback((startType: string, path: string[], endFilters: Filter[]) => {
     const results = new Map<string, GraphNode[]>();
     if (!graphData) return results;
     const startNodes = graphData.nodes.filter(n => n['Node Type'] === startType);
-    const endNodeType = path[path.length - 1];
     for (const s of startNodes) {
       let current = new Set<string>([s.id]);
       for (let i = 1; i < path.length; i++) {
@@ -1188,19 +980,23 @@ function App() {
     setGraphData({ ...graphData, nodes: updated });
   }, [graphData, buildSubqueryResults, edgeIndex]);
   // OPTIMIZED: Memoized edge types with cascading filter support (moved after applyFiltersToNodes)
+  // Get the nodes that would be shown in edgeTypes view
+  const edgeTypesNodes = useMemo(() => {
+    if (currentView !== 'edgeTypes' || !selectedNodeType) return [];
+    if (cypherEnabled) return [];
+
+    let targetNodes = graphData?.nodes?.filter(node => node['Node Type'] === selectedNodeType) || [];
+    targetNodes = applyCascadingFilters(targetNodes, currentQuery);
+    return targetNodes;
+  }, [cypherEnabled, currentView, selectedNodeType, graphData, applyCascadingFilters, currentQuery]);
+
   const memoizedEdgeTypes = useMemo(() => {
     if (currentView !== 'edgeTypes' || !selectedNodeType) return [];
     if (cypherEnabled) return edgeTypeSummaryCypher;
 
-    // Get nodes of the selected type and apply cascading filters
-    let targetNodes = graphData?.nodes?.filter(node => node['Node Type'] === selectedNodeType) || [];
-    targetNodes = applyCascadingFilters(targetNodes, currentQuery);
-    
-    console.log(`Edge types calculation using ${targetNodes.length} cascading-filtered ${selectedNodeType} nodes`);
-    
-    // Use a modified version that works with specific nodes
-    return getConnectedEdgeTypesFromNodes(selectedNodeType, targetNodes);
-  }, [cypherEnabled, edgeTypeSummaryCypher, currentView, selectedNodeType, graphData, applyCascadingFilters, currentQuery, getConnectedEdgeTypesFromNodes]);
+    // Use the computed edgeTypesNodes
+    return getConnectedEdgeTypesFromNodes(selectedNodeType, edgeTypesNodes);
+  }, [cypherEnabled, edgeTypeSummaryCypher, currentView, selectedNodeType, edgeTypesNodes, getConnectedEdgeTypesFromNodes]);
 
   // Memoized node type summary with cascading filter support (moved after applyFiltersToNodes)
   const nodeTypeSummary = useMemo(() => {
@@ -1209,8 +1005,6 @@ function App() {
     }
     if (!graphData || !graphData.nodes) return [];
     
-    console.time('Node Type Summary Calculation');
-    console.log('Calculating cascading filtered node type summary...');
     
     // Apply cascading filters through the entire query path for treemap view
     let filteredNodes = applyCascadingFilters(graphData.nodes, currentQuery);
@@ -1272,14 +1066,6 @@ function App() {
       examples: nodeTypeExamples[type] || []
     }));
     
-    console.log('Cascading filtered node type summary calculated:', {
-      uniqueTypes: result.length,
-      totalNodes: filteredNodes.length,
-      originalNodes: graphData.nodes.length,
-      querySteps: currentQuery.length,
-      largestType: [...result].sort((a, b) => (b.count as number) - (a.count as number))[0]
-    });
-    console.timeEnd('Node Type Summary Calculation');
     
     return result;
   }, [cypherEnabled, nodeTypeSummaryCypher, currentView, graphData, applyCascadingFilters, currentQuery, activeFilters.nodeFilters]);
@@ -1301,7 +1087,6 @@ function App() {
       queryContext: (filter as any).queryContext !== undefined ? (filter as any).queryContext as string : (currentQueryContext || 'root')
     };
     
-    console.log(`Adding scoped pending ${type} filter:`, scopedFilter);
     setPendingFilters((prev: PendingFilters) => ({
       ...prev,
       [type]: (prev[type] as Filter[]).filter((f: Filter) => f.attribute !== (filter as Filter).attribute).concat([scopedFilter])
@@ -1309,7 +1094,6 @@ function App() {
   }, [currentQuery]);
 
   const removePendingFilter = useCallback((type: keyof PendingFilters, attribute: string, queryStep: number | null = null, queryContext: string | null = null) => {
-    console.log(`Removing pending ${type} filter: ${attribute} (step: ${queryStep}, context: ${queryContext})`);
     setPendingFilters((prev: PendingFilters) => ({
       ...prev,
       [type]: (prev[type] as Filter[]).filter((f: Filter) => {
@@ -1327,7 +1111,6 @@ function App() {
 
      // NEW: Finalize all pending filters (move them to active)
    const finalizeAllFilters = useCallback(() => {
-     console.log('Finalizing all pending filters');
      
      setActiveFilters(prev => ({
        nodeFilters: [...prev.nodeFilters, ...pendingFilters.nodeFilters],
@@ -1343,7 +1126,6 @@ function App() {
 
    // NEW: Clear all pending filters
    const clearAllPendingFilters = useCallback(() => {
-     console.log('Clearing all pending filters');
      setPendingFilters({
        nodeFilters: [],
        edgeFilters: []
@@ -1352,7 +1134,6 @@ function App() {
 
    // NEW: Remove specific active filter by attribute and query step (for deletion from query pills)
   const removeActiveFilter = useCallback((type: keyof ActiveFilters, attribute: string, queryStep: number | null = null, queryContext: string | null = null) => {
-     console.log(`Removing active ${type} filter: ${attribute} (step: ${queryStep}, context: ${queryContext})`);
     setActiveFilters((prev: ActiveFilters) => ({
       ...prev,
       [type]: (prev[type] as Filter[]).filter((f: Filter) => {
@@ -1369,7 +1150,6 @@ function App() {
   }, []);
 
    const saveFiltersToQuery = useCallback((type: keyof ActiveFilters) => {
-     console.log(`Saving ${type} filters to active query`);
      // Note: This is now just for immediate finalization if needed
      finalizeAllFilters();
    }, [finalizeAllFilters]);
@@ -1378,8 +1158,6 @@ function App() {
 
   // OPTIMIZED: Get current nodes for attribute analysis with cascading filter support
   const getCurrentNodes = useMemo<GraphNode[]>(() => {
-    console.time('Get Current Nodes');
-    console.log(`Getting current nodes for view: ${currentView}`);
     
     let result: GraphNode[] = [];
     if (currentView === 'nodeTypes') {
@@ -1430,18 +1208,13 @@ function App() {
       }
     }
     
-    console.log(`Current nodes count: ${result.length} (after cascading filters through ${currentQuery.length} query steps)`);
-    console.timeEnd('Get Current Nodes');
     return result;
   }, [currentView, selectedNodeType, filteredNodes, graphData, applyCascadingFilters, currentQuery, activeFilters.nodeFilters]);
 
   // OPTIMIZED: Get current edges using index with cascading filter support
   const getCurrentEdges = useMemo<GraphLink[]>(() => {
-    console.time('Get Current Edges');
-    console.log(`Getting current edges for view: ${currentView} (optimized)`);
     
     if (!graphData || !graphData.links) {
-      console.timeEnd('Get Current Edges');
       return [] as GraphLink[];
     }
     
@@ -1484,8 +1257,6 @@ function App() {
     
     result = applyFiltersToEdges(result, relevantFilters);
     
-    console.log(`Current edges count: ${result.length} (after cascading node filters + ${relevantFilters.length} edge filters)`);
-    console.timeEnd('Get Current Edges');
     return result;
   }, [cypherEnabled, currentEdgesCypher, currentView, selectedNodeType, selectedEdgeType, graphData, edgeIndex, activeFilters.edgeFilters, applyFiltersToEdges, applyCascadingFilters, currentQuery]);
 
@@ -1577,7 +1348,6 @@ function App() {
       <QueryBuilder 
         currentQuery={currentQuery}
         onQueryChange={(q: string[]) => {
-          console.log('[Path Debug] onQueryChange', { from: currentQuery, to: q });
           setCurrentQuery(q);
           updateViewForPath(q);
         }}
@@ -1609,7 +1379,7 @@ function App() {
                       <div className="font-medium">Building a subquery for each {deriveBuilder.startType || selectedNodeType || 'node'}...</div>
                       <div className="mt-1"><span className="text-vercel-gray">Path:</span> {deriveBuilder.path.length>0?deriveBuilder.path.join(' → '): (selectedNodeType ? 'Click an edge, then a node...' : 'Click a node type, then an edge, then a node...')}</div>
                       <div className="mt-2 flex items-center gap-2">
-                        <button onClick={()=>{ console.log('[Derive Debug] Finalize Subquery clicked', { path: deriveBuilder.path }); setDeriveBuilder(prev=>({...prev, stage:'measure'})); }} disabled={deriveBuilder.path.length<1} className="px-3 py-1.5 text-xs font-mono rounded border border-vercel-black bg-vercel-black text-white hover:bg-vercel-gray disabled:opacity-30 transition-colors">Finalize Subquery</button>
+                        <button onClick={()=>{ setDeriveBuilder(prev=>({...prev, stage:'measure'})); }} disabled={deriveBuilder.path.length<1} className="px-3 py-1.5 text-xs font-mono rounded border border-vercel-black bg-vercel-black text-white hover:bg-vercel-gray disabled:opacity-30 transition-colors">Finalize Subquery</button>
                         <button onClick={()=>setDeriveBuilder(prev=>({...prev, path:[], startType:selectedNodeType||null}))} className="px-3 py-1.5 text-xs font-mono rounded border border-vercel-border bg-white text-vercel-black hover:bg-vercel-bg transition-colors">Clear Path</button>
                         <button onClick={()=>setDeriveBuilder({ active:false, stage:null, method:null, name:'', path:[], startType:null, measureType:null, measureOp:null, measureProp:null, measurePropContext:null })} className="px-3 py-1.5 text-xs font-mono rounded border border-vercel-border bg-white text-vercel-black hover:bg-vercel-bg transition-colors">Cancel</button>
                       </div>
@@ -1636,10 +1406,6 @@ function App() {
                         onComplete={() => {
                           // Navigate back to original state
                           if (deriveBuilder.originalQuery) {
-                            console.log('[Derive] Restoring original state', {
-                              originalQuery: deriveBuilder.originalQuery,
-                              originalView: deriveBuilder.originalView
-                            });
                             setCurrentQuery([...deriveBuilder.originalQuery]);
                             setCurrentView(deriveBuilder.originalView || 'nodeTypes');
                             setSelectedNodeType(deriveBuilder.originalSelectedNodeType || null);
@@ -1857,7 +1623,6 @@ function App() {
                 <button
                   onClick={() => {
                     const initialPath = selectedNodeType ? [selectedNodeType] : [];
-                    console.log('[Derive Debug] Start subquery mode', { selectedNodeType, initialPath });
                     setDeriveBuilder({ 
                       active: true, 
                       stage: 'subquery', 
@@ -1896,7 +1661,7 @@ function App() {
               selectedEdgeType={selectedEdgeType}
               nodeTypeSummary={nodeTypeSummary}
               edgeTypeSummary={currentView === 'edgeTypes' ? memoizedEdgeTypes : []}
-              filteredNodes={filteredNodes}
+              filteredNodes={currentView === 'edgeTypes' ? edgeTypesNodes : filteredNodes}
               onNodeTypeClick={handleNodeTypeClick}
               onEdgeTypeClick={handleEdgeTypeClick}
               onBackClick={handleBackClick}

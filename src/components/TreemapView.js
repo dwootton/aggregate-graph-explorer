@@ -126,16 +126,7 @@ const TreemapView = ({
   useEffect(() => {
     if (!svgRef.current) return;
 
-    console.time('Treemap Rendering');
-    console.log(`Starting treemap render for view: ${currentView}`, {
-      dimensions,
-      dataSource: currentView === 'nodeTypes' ? 'nodeTypeSummary' : 
-                  currentView === 'edgeTypes' ? 'edgeTypeSummary' : 'filteredNodes',
-      dataSize: currentView === 'nodeTypes' ? nodeTypeSummary.length :
-                currentView === 'edgeTypes' ? edgeTypeSummary.length : filteredNodes.length
-    });
 
-    console.time('SVG Setup');
     const svg = d3.select(svgRef.current);
     svg.selectAll("*").remove();
 
@@ -153,9 +144,7 @@ const TreemapView = ({
       .attr('height', height)
       .append('g')
       .attr('transform', `translate(${margin.left},${margin.top})`);
-    console.timeEnd('SVG Setup');
 
-    console.time('Data Preparation');
     let data = [];
     let colorScale;
     let parentNode = null;
@@ -163,7 +152,6 @@ const TreemapView = ({
     // Use settings colors if available
     // Defaults: nodes blue, edges green shades
     const defaultNodeColor = settings?.nodeColor || '#000000'; // Black
-    const defaultEdgeColor = settings?.edgeColor || '#f5f5f5'; // Very light gray
     const edgeShades = settings?.edgeTypeColors || [
       '#fafafa', '#f7f7f7', '#f5f5f5', '#f2f2f2', '#f0f0f0', '#ededed', '#ebebeb', '#e8e8e8', '#e6e6e6'
     ];
@@ -178,12 +166,19 @@ const TreemapView = ({
       // All node type rectangles in blue
       colorScale = () => defaultNodeColor;
     } else if (currentView === 'edgeTypes') {
+      console.log('[table-missing] D3: Rendering edgeTypes, edgeTypeSummary length:', edgeTypeSummary.length);
+      console.log('[table-missing] D3: edgeTypeSummary contents:', edgeTypeSummary);
+      console.log('[table-missing] D3: selectedNodeType:', selectedNodeType);
+      
       data = edgeTypeSummary.map(item => ({
         ...item,
         value: item.count,
         id: item.type,
         label: item.type
       }));
+      
+      console.log('[table-missing] D3: edgeTypes data array:', data);
+      
       // Edge type rectangles all white
       colorScale = d3.scaleOrdinal(edgeShades);
       
@@ -196,7 +191,8 @@ const TreemapView = ({
         height: 25
       };
     } else if (currentView === 'specificNodes') {
-      console.time('Node Grouping');
+      console.log('[table-missing] D3: Rendering specificNodes, filteredNodes:', filteredNodes.length);
+      
       // Group nodes by type for treemap
       const nodesByType = {};
       filteredNodes.forEach(node => {
@@ -207,6 +203,8 @@ const TreemapView = ({
         nodesByType[nodeType].push(node);
       });
 
+      console.log('[table-missing] D3: nodesByType:', nodesByType);
+
       data = Object.entries(nodesByType).map(([nodeType, nodes]) => ({
         id: nodeType,
         label: nodeType,
@@ -214,9 +212,11 @@ const TreemapView = ({
         nodes: nodes,
         type: 'nodeType'
       }));
+      
+      console.log('[table-missing] D3: data array created:', data);
+      
       // Specific nodes are still node groups: keep blue
       colorScale = () => defaultNodeColor;
-      console.timeEnd('Node Grouping');
       
       // Add parent edge representation
       parentNode = {
@@ -229,18 +229,13 @@ const TreemapView = ({
     }
 
     if (data.length === 0) {
-      console.log('No data to render');
-      console.timeEnd('Treemap Rendering');
+      console.log('[table-missing] D3: No data to render, early return');
       return;
     }
+    
+    console.log('[table-missing] D3: Proceeding to render', data.length, 'items');
 
-    console.log(`Data prepared: ${data.length} items`, {
-      totalValue: data.reduce((sum, d) => sum + d.value, 0),
-      largest: data.sort((a, b) => b.value - a.value)[0]?.label
-    });
-    console.timeEnd('Data Preparation');
 
-    console.time('D3 Hierarchy & Treemap');
     // Create hierarchy
     const root = d3.hierarchy({ children: data })
       .sum(d => d.value)
@@ -260,7 +255,6 @@ const TreemapView = ({
       d.y0 += yOffset;
       d.y1 += yOffset;
     });
-    console.timeEnd('D3 Hierarchy & Treemap');
 
     // Collect rectangle positions for smart routing
     const rectangles = root.leaves().map(d => ({
@@ -270,10 +264,9 @@ const TreemapView = ({
       y1: d.y1
     }));
 
-    console.time('Parent Node Rendering');
     // Draw parent node if it exists
     if (parentNode && (!settings || settings.showConnectors !== false)) {
-      const parentRect = g.append('rect')
+      g.append('rect')
         .attr('x', parentNode.x)
         .attr('y', parentNode.y)
         .attr('width', parentNode.width)
@@ -289,7 +282,7 @@ const TreemapView = ({
           if (onBackClick) onBackClick();
         });
 
-      const parentText = g.append('text')
+      g.append('text')
         .attr('x', parentNode.x + parentNode.width / 2)
         .attr('y', parentNode.y + parentNode.height / 2 + 5)
         .attr('text-anchor', 'middle')
@@ -303,7 +296,6 @@ const TreemapView = ({
           if (onBackClick) onBackClick();
         });
 
-      console.time('Smart Connector Lines');
       // Add smart connectors from parent to children
       const parentCenterX = parentNode.x + parentNode.width / 2;
       const parentBottomY = parentNode.y + parentNode.height;
@@ -406,11 +398,8 @@ const TreemapView = ({
           
           setTooltip({ show: false, x: 0, y: 0, title: '', content: '' });
         });
-      console.timeEnd('Smart Connector Lines');
     }
-    console.timeEnd('Parent Node Rendering');
 
-    console.time('Treemap Rectangles');
     // Create treemap rectangles
     const cell = g.selectAll('.cell')
       .data(root.leaves())
@@ -438,7 +427,6 @@ const TreemapView = ({
         
         // Always show tooltip with full information
         const width = d.x1 - d.x0;
-        const height = d.y1 - d.y0;
         // Position tooltip centered above the rect
         const svgRect = svgRef.current?.getBoundingClientRect();
         const centerX = (svgRect?.left || 0) + margin.left + d.x0 + width / 2;
@@ -474,7 +462,6 @@ const TreemapView = ({
         setTooltip({ show: false, x: 0, y: 0, content: '', title: '' });
       })
       .on('click', function(event, d) {
-        console.log('[Derive Debug] Treemap click', { view: currentView, id: d.data.id, label: d.data.label, value: d.data.value });
         if (currentView === 'nodeTypes') {
           onNodeTypeClick(d.data.id);
         } else if (currentView === 'edgeTypes') {
@@ -484,9 +471,7 @@ const TreemapView = ({
           onNodeTypeClick(d.data.id);
         }
       });
-    console.timeEnd('Treemap Rectangles');
 
-    console.time('Text Rendering');
     // Add labels with conditional rendering based on size
     cell.append('text')
       .attr('x', 12)
@@ -578,7 +563,6 @@ const TreemapView = ({
           });
       }
     });
-    console.timeEnd('Text Rendering');
 
     function wrapText(text) {
       text.each(function(d) {
@@ -617,8 +601,6 @@ const TreemapView = ({
       });
     }
 
-    console.log('Treemap rendering completed');
-    console.timeEnd('Treemap Rendering');
 
   }, [dimensions, currentView, nodeTypeSummary, edgeTypeSummary, filteredNodes, settings]);
 
@@ -654,19 +636,53 @@ const TreemapView = ({
   }
 
   const hasAnyNonLeafNodes = (nodes, edgeIdx) => {
-    if (!nodes || nodes.length === 0 || !edgeIdx) return false;
+    if (!nodes || nodes.length === 0 || !edgeIdx) {
+      console.log('[table-missing] hasAnyNonLeafNodes early return:', { 
+        hasNodes: !!nodes, 
+        nodeCount: nodes?.length || 0, 
+        hasEdgeIdx: !!edgeIdx 
+      });
+      return false;
+    }
     
-    return nodes.some(node => {
+    const result = nodes.some(node => {
       const outgoingEdges = edgeIdx.bySource?.get(node.id) || [];
+      console.log('[table-missing] Checking node:', { 
+        nodeId: node.id, 
+        nodeType: node['Node Type'], 
+        outgoingEdgeCount: outgoingEdges.length 
+      });
       return outgoingEdges.length > 0;
     });
+    
+    console.log('[table-missing] hasAnyNonLeafNodes result:', result);
+    return result;
   };
+
+  // Group filteredNodes by type for diagnostics
+  const nodeTypeBreakdown = {};
+  if (currentView === 'specificNodes' && filteredNodes.length > 0) {
+    filteredNodes.forEach(node => {
+      const type = node['Node Type'] || 'Unknown';
+      nodeTypeBreakdown[type] = (nodeTypeBreakdown[type] || 0) + 1;
+    });
+  }
+
+  console.log('[table-missing] Conditions check:', {
+    currentView,
+    filteredNodesLength: filteredNodes.length,
+    hasEdgeIndex: !!edgeIndex,
+    nodeTypeBreakdown
+  });
 
   const allNodesAreLeaves = currentView === 'specificNodes' && 
     filteredNodes.length > 0 && 
     !hasAnyNonLeafNodes(filteredNodes, edgeIndex);
 
+  console.log('[table-missing] allNodesAreLeaves:', allNodesAreLeaves);
+
   if (allNodesAreLeaves) {
+    console.log('[table-missing] Rendering TABLE view with', filteredNodes.length, 'nodes');
     const tableItems = filteredNodes.map(node => ({
       type: 'node',
       data: node
@@ -700,6 +716,8 @@ const TreemapView = ({
       </div>
     );
   }
+
+  console.log('[table-missing] Rendering TREEMAP view');
 
   return (
     <div ref={containerRef} className="bg-white rounded shadow-sm border border-vercel-border p-3 h-full relative">

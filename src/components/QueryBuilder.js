@@ -197,62 +197,29 @@ const QueryBuilder = ({
 
   const handleSave = async () => {
     if (queryName.trim()) {
-      console.time('Query Save Operation');
-      console.log(`Starting query save: "${queryName}"`, {
-        queryLength: currentQuery.length,
-        queryPath: currentQuery.join(' → '),
-        notesLength: queryNotes.length
-      });
-      
       setIsSaving(true);
       try {
         await onSave(queryName.trim(), queryNotes.trim());
         setQueryName('');
         setQueryNotes('');
         setShowSaveDialog(false);
-        
-        console.log('Query saved successfully');
-        console.timeEnd('Query Save Operation');
       } catch (error) {
-        console.error('Error saving query:', error);
-        console.timeEnd('Query Save Operation');
+        // Error handled by parent component
       } finally {
         setIsSaving(false);
       }
     }
   };
 
-  const handleQueryEdit = (index, newValue) => {
-    console.log(`Query part edited at index ${index}:`, {
-      oldValue: currentQuery[index],
-      newValue,
-      totalParts: currentQuery.length
-    });
-    
-    const newQuery = [...currentQuery];
-    newQuery[index] = newValue;
-    onQueryChange(newQuery);
-  };
 
   const removeQueryPart = (index) => {
-    console.log('[Path Debug] Removing query part', {
-      index,
-      removedPart: currentQuery[index],
-      from: currentQuery
-    });
     // Remove selected step and everything after it to maintain context
     const newQuery = currentQuery.slice(0, index);
-    console.log('[Path Debug] New query after removal', { to: newQuery });
     onQueryChange(newQuery);
   };
 
   // Handle clicking on a query pill to navigate back to that state
   const handleQueryPillClick = (index) => {
-    console.log(`Query pill clicked at index ${index}:`, {
-      targetQuery: currentQuery.slice(0, index + 1).join(' → '),
-      fromQuery: currentQuery.join(' → ')
-    });
-    
     if (onNavigateToQueryIndex) {
       onNavigateToQueryIndex(index);
     }
@@ -312,7 +279,6 @@ const QueryBuilder = ({
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => {
-                console.log('Query reset requested');
                 onReset();
               }}
               disabled={currentQuery.length === 0}
@@ -326,7 +292,6 @@ const QueryBuilder = ({
             
             <button
               onClick={() => {
-                console.log('Save dialog opened');
                 setShowSaveDialog(true);
               }}
               disabled={currentQuery.length === 0 || isSaving}
@@ -406,7 +371,6 @@ const QueryBuilder = ({
             <div className="flex justify-end gap-3 mt-6">
               <button
                 onClick={() => {
-                  console.log('Save dialog cancelled');
                   setShowSaveDialog(false);
                 }}
                 disabled={isSaving}
