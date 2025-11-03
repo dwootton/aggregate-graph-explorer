@@ -6,6 +6,7 @@ import QueryBuilder from './components/QueryBuilder';
 import SavedQueries from './components/SavedQueries';
 import SettingsPanel from './components/SettingsPanel';
 import DeriveAttributePanel from './components/DeriveAttributePanel';
+import PathTableView from './components/PathTableView';
 import { CypherService } from './services/cypher';
 import {
   GraphData,
@@ -38,6 +39,16 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [isCalculating, setIsCalculating] = useState(false);
   const [calculationProgress, setCalculationProgress] = useState('');
+  
+  // Base graph state for set operators
+  const [baseGraph, setBaseGraph] = useState<{
+    type: 'union' | 'intersect' | 'subtract' | 'connect';
+    nodes?: GraphNode[];
+    paths?: any[];
+    label: string;
+    sourceQueryIds?: number[];
+  } | null>(null);
+  
   // Cypher backend toggle and derived state
   const cypherEnabled = useMemo(() => CypherService.isEnabled(), []);
   const [edgeTypeSummaryCypher, setEdgeTypeSummaryCypher] = useState<EdgeTypeSummary[]>([]);
@@ -745,6 +756,27 @@ function App() {
     return new Promise<void>((resolve) => {
       // Use setTimeout to make this async and prevent UI freezing
       setTimeout(() => {
+        // Compute the correct nodes based on current view
+        let nodesToSave: GraphNode[] = [];
+        if (currentView === 'nodeTypes') {
+          // For nodeTypes view, save all nodes of all types
+          nodesToSave = graphData?.nodes || [];
+        } else if (currentView === 'edgeTypes' && selectedNodeType) {
+          // For edgeTypes view, save nodes of the selected type
+          nodesToSave = graphData?.nodes?.filter(node => node['Node Type'] === selectedNodeType) || [];
+          nodesToSave = applyCascadingFilters(nodesToSave, currentQuery);
+        } else if (currentView === 'specificNodes') {
+          // For specificNodes view, use filteredNodes
+          nodesToSave = filteredNodes;
+        }
+        
+        console.log('[connect] Saving query:', {
+          name,
+          currentView,
+          nodesToSaveCount: nodesToSave.length,
+          sampleNodeTypes: [...new Set(nodesToSave.slice(0, 10).map(n => n['Node Type']))]
+        });
+        
         const newQuery = {
           id: Date.now(),
           name,
@@ -756,7 +788,7 @@ function App() {
             selectedNodeType,
             selectedEdgeType,
             currentQuery: [...currentQuery],
-            filteredNodes: [...filteredNodes],
+            filteredNodes: [...nodesToSave],
             activeFilters: { nodeFilters: [...activeFilters.nodeFilters], edgeFilters: [...activeFilters.edgeFilters] },
             pendingFilters: { nodeFilters: [...pendingFilters.nodeFilters], edgeFilters: [...pendingFilters.edgeFilters] },
             showAttributesFor
@@ -767,7 +799,32 @@ function App() {
         resolve();
       }, 0);
     });
-  }, [currentQuery]);
+  }, [currentQuery, currentView, selectedNodeType, selectedEdgeType, filteredNodes, activeFilters, pendingFilters, showAttributesFor, graphData, applyCascadingFilters]);
+
+  // Handle set operation completion from SavedQueries
+  const handleOperationComplete = useCallback((result: any) => {
+    if (result.type === 'connect-progress') {
+      setIsCalculating(true);
+      setCalculationProgress(`Finding paths: ${result.progress.current} of ${result.progress.total} nodes...`);
+      return;
+    }
+    
+    setIsCalculating(false);
+    setCalculationProgress('');
+    setBaseGraph(result);
+    
+    if (result.type === 'connect') {
+      setCurrentView('specificNodes');
+      setFilteredNodes([]);
+    } else {
+      setCurrentView('nodeTypes');
+      setFilteredNodes(result.nodes || []);
+    }
+    
+    setCurrentQuery([]);
+    setSelectedNodeType(null);
+    setSelectedEdgeType(null);
+  }, []);
 
   // Derivation helpers
   const computeDerivedBoolean = useCallback((name: string, startType: string, path: string[], endFilters: Filter[]) => {
@@ -1005,9 +1062,14 @@ function App() {
     }
     if (!graphData || !graphData.nodes) return [];
     
-    
-    // Apply cascading filters through the entire query path for treemap view
-    let filteredNodes = applyCascadingFilters(graphData.nodes, currentQuery);
+    // If we have a base graph from set operators, use those nodes
+    let filteredNodes: GraphNode[];
+    if (baseGraph && baseGraph.nodes && baseGraph.type !== 'connect') {
+      filteredNodes = baseGraph.nodes;
+    } else {
+      // Apply cascading filters through the entire query path for treemap view
+      filteredNodes = applyCascadingFilters(graphData.nodes, currentQuery);
+    }
     // Apply root per-type filters at root
     if (currentView === 'nodeTypes') {
       const byType = new Map<string, Filter[]>();
@@ -1068,7 +1130,7 @@ function App() {
     
     
     return result;
-  }, [cypherEnabled, nodeTypeSummaryCypher, currentView, graphData, applyCascadingFilters, currentQuery, activeFilters.nodeFilters]);
+  }, [cypherEnabled, nodeTypeSummaryCypher, currentView, graphData, applyCascadingFilters, currentQuery, activeFilters.nodeFilters, baseGraph]);
 
   // NEW: Add/Update/Remove filter functions with query step context
   const addPendingFilter = useCallback((type: keyof PendingFilters, filter: Partial<Filter> | null) => {
@@ -1359,6 +1421,8 @@ function App() {
         activeFilters={activeFilters}
         onRemoveFilter={removeActiveFilter}
         deriveStartType={deriveBuilder.active ? deriveBuilder.startType : null}
+        baseGraph={baseGraph}
+        onRemoveBaseGraph={() => setBaseGraph(null)}
       />
 
       {/* Pending Filters Display */}
@@ -1652,24 +1716,28 @@ function App() {
             )}
           </div>
 
-          {/* Main Treemap View */}
+          {/* Main Treemap View or Path Table View */}
           <div className="flex-1 min-w-0">
-            <TreemapView
-              graphData={graphData}
-              currentView={currentView}
-              selectedNodeType={selectedNodeType}
-              selectedEdgeType={selectedEdgeType}
-              nodeTypeSummary={nodeTypeSummary}
-              edgeTypeSummary={currentView === 'edgeTypes' ? memoizedEdgeTypes : []}
-              filteredNodes={currentView === 'edgeTypes' ? edgeTypesNodes : filteredNodes}
-              onNodeTypeClick={handleNodeTypeClick}
-              onEdgeTypeClick={handleEdgeTypeClick}
-              onBackClick={handleBackClick}
-              settings={settings}
-              isCalculating={isCalculating}
-              calculationProgress={calculationProgress}
-              edgeIndex={edgeIndex}
-            />
+            {baseGraph && baseGraph.type === 'connect' && baseGraph.paths ? (
+              <PathTableView paths={baseGraph.paths} />
+            ) : (
+              <TreemapView
+                graphData={graphData}
+                currentView={currentView}
+                selectedNodeType={selectedNodeType}
+                selectedEdgeType={selectedEdgeType}
+                nodeTypeSummary={nodeTypeSummary}
+                edgeTypeSummary={currentView === 'edgeTypes' ? memoizedEdgeTypes : []}
+                filteredNodes={currentView === 'edgeTypes' ? edgeTypesNodes : filteredNodes}
+                onNodeTypeClick={handleNodeTypeClick}
+                onEdgeTypeClick={handleEdgeTypeClick}
+                onBackClick={handleBackClick}
+                settings={settings}
+                isCalculating={isCalculating}
+                calculationProgress={calculationProgress}
+                edgeIndex={edgeIndex}
+              />
+            )}
           </div>
 
           {/* Right Side - Pop-out Panels */}
@@ -1680,6 +1748,7 @@ function App() {
             <div className="h-full bg-white border-l border-vercel-border shadow-sm">
               <SavedQueries 
                 savedQueries={savedQueries}
+                graphData={graphData}
                 onLoadQuery={(query: SavedQuery) => {
                   // Restore full saved state
                   const s = query.state;
@@ -1702,6 +1771,7 @@ function App() {
                 onDeleteQuery={(id: number) => {
                   setSavedQueries(savedQueries.filter((q: SavedQuery) => q.id !== id));
                 }}
+                onOperationComplete={handleOperationComplete}
                 onClose={() => setShowSavedQueries(false)}
               />
             </div>

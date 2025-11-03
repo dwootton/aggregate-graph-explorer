@@ -1,36 +1,231 @@
 import React, { useState } from 'react';
 
-const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => {
-  const [selectedQueries, setSelectedQueries] = useState(new Set());
+const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose, onOperationComplete, graphData }) => {
+  const [selectedQueries, setSelectedQueries] = useState([]);
   const [showOperations, setShowOperations] = useState(false);
 
   const handleQuerySelect = (queryId) => {
-    const newSelected = new Set(selectedQueries);
-    if (newSelected.has(queryId)) {
-      newSelected.delete(queryId);
-    } else {
-      newSelected.add(queryId);
+    if (selectedQueries.includes(queryId)) {
+      setSelectedQueries(selectedQueries.filter(id => id !== queryId));
+    } else if (selectedQueries.length < 2) {
+      setSelectedQueries([...selectedQueries, queryId]);
     }
-    setSelectedQueries(newSelected);
+  };
+  
+  const getSelectionLabel = (queryId) => {
+    const index = selectedQueries.indexOf(queryId);
+    if (index === 0) return 'A';
+    if (index === 1) return 'B';
+    return null;
   };
 
   const handleSelectAll = () => {
-    if (selectedQueries.size === savedQueries.length) {
-      setSelectedQueries(new Set());
+    if (selectedQueries.length === savedQueries.length) {
+      setSelectedQueries([]);
     } else {
-      setSelectedQueries(new Set(savedQueries.map(q => q.id)));
+      setSelectedQueries(savedQueries.slice(0, 2).map(q => q.id));
     }
   };
 
   const getSelectedQueries = () => {
-    return savedQueries.filter(q => selectedQueries.has(q.id));
+    return selectedQueries.map(id => savedQueries.find(q => q.id === id)).filter(Boolean);
   };
 
-  const handleOperation = (operation) => {
+  const getNodesFromQuery = (query) => {
+    if (!graphData || !query.state || !query.state.filteredNodes) {
+      return [];
+    }
+    return query.state.filteredNodes;
+  };
+
+  const performSetOperation = (operation, queries) => {
+    if (queries.length < 2 && operation !== 'connect') return [];
+
+    const nodeSets = queries.map(q => {
+      const nodes = getNodesFromQuery(q);
+      return new Set(nodes.map(n => n.id));
+    });
+
+    let resultNodeIds = new Set();
+
+    if (operation === 'union') {
+      nodeSets.forEach(set => {
+        set.forEach(id => resultNodeIds.add(id));
+      });
+    } else if (operation === 'intersect') {
+      resultNodeIds = new Set(nodeSets[0]);
+      for (let i = 1; i < nodeSets.length; i++) {
+        resultNodeIds = new Set([...resultNodeIds].filter(id => nodeSets[i].has(id)));
+      }
+    } else if (operation === 'subtract') {
+      resultNodeIds = new Set(nodeSets[0]);
+      for (let i = 1; i < nodeSets.length; i++) {
+        nodeSets[i].forEach(id => resultNodeIds.delete(id));
+      }
+    }
+
+    return graphData.nodes.filter(n => resultNodeIds.has(n.id));
+  };
+
+  const findShortestPathToAnyTarget = (startId, targetIdSet, maxDepth = 5) => {
+    if (targetIdSet.has(startId)) {
+      const node = graphData.nodes.find(n => n.id === startId);
+      return { path: [node], distance: 0, endNode: node };
+    }
+
+    const visited = new Set();
+    const queue = [{ nodeId: startId, path: [startId], edges: [], distance: 0 }];
+    
+    while (queue.length > 0) {
+      const { nodeId, path, edges, distance } = queue.shift();
+      
+      if (distance > maxDepth) continue;
+      if (visited.has(nodeId)) continue;
+      visited.add(nodeId);
+
+      const connectedEdges = graphData.links.filter(
+        link => link.source === nodeId || link.target === nodeId
+      );
+
+      for (const edge of connectedEdges) {
+        const nextNodeId = edge.source === nodeId ? edge.target : edge.source;
+        
+        if (targetIdSet.has(nextNodeId)) {
+          const fullPath = [...path, nextNodeId];
+          const fullEdges = [...edges, edge];
+          const pathNodes = fullPath.map(id => graphData.nodes.find(n => n.id === id));
+          const pathWithEdges = [];
+          for (let i = 0; i < pathNodes.length; i++) {
+            pathWithEdges.push(pathNodes[i]);
+            if (i < fullEdges.length) pathWithEdges.push(fullEdges[i]);
+          }
+          const endNode = graphData.nodes.find(n => n.id === nextNodeId);
+          return { path: pathWithEdges, distance: distance + 1, endNode };
+        }
+
+        if (!visited.has(nextNodeId)) {
+          queue.push({
+            nodeId: nextNodeId,
+            path: [...path, nextNodeId],
+            edges: [...edges, edge],
+            distance: distance + 1
+          });
+        }
+      }
+    }
+
+    return null;
+  };
+
+  const performConnect = async (queries, onProgress) => {
+    if (!graphData || queries.length === 0) {
+      return [];
+    }
+
+    const BATCH_SIZE = 10;
+    
+    const processBatch = (startNodes, targetIdSet, startIndex, paths) => {
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          const endIndex = Math.min(startIndex + BATCH_SIZE, startNodes.length);
+          
+          for (let i = startIndex; i < endIndex; i++) {
+            const startNode = startNodes[i];
+            const pathResult = findShortestPathToAnyTarget(startNode.id, targetIdSet);
+            if (pathResult) {
+              paths.push({
+                id: `path-${startNode.id}-${pathResult.endNode.id}`,
+                startNode,
+                endNode: pathResult.endNode,
+                path: pathResult.path,
+                totalDistance: pathResult.distance
+              });
+            }
+          }
+          
+          resolve(endIndex);
+        }, 0);
+      });
+    };
+
+    if (queries.length === 1) {
+      const nodes = getNodesFromQuery(queries[0]);
+      const paths = [];
+      const nodeIdSet = new Set(nodes.map(n => n.id));
+      
+      let processedCount = 0;
+      while (processedCount < nodes.length) {
+        const startNode = nodes[processedCount];
+        const otherNodesSet = new Set([...nodeIdSet]);
+        otherNodesSet.delete(startNode.id);
+        
+        processedCount = await processBatch(
+          nodes.map(n => ({ ...n, targetSet: otherNodesSet })), 
+          otherNodesSet,
+          processedCount, 
+          paths
+        );
+        
+        if (onProgress) {
+          onProgress(processedCount, nodes.length);
+        }
+      }
+      
+      return paths.sort((a, b) => a.totalDistance - b.totalDistance);
+    } else {
+      const query1Nodes = getNodesFromQuery(queries[0]);
+      const query2Nodes = getNodesFromQuery(queries[1]);
+      const paths = [];
+      const query2NodeIdSet = new Set(query2Nodes.map(n => n.id));
+      
+      let processedCount = 0;
+      while (processedCount < query1Nodes.length) {
+        processedCount = await processBatch(query1Nodes, query2NodeIdSet, processedCount, paths);
+        
+        if (onProgress) {
+          onProgress(processedCount, query1Nodes.length);
+        }
+      }
+
+      return paths.sort((a, b) => a.totalDistance - b.totalDistance);
+    }
+  };
+
+  const handleOperation = async (operation) => {
     const selected = getSelectedQueries();
-    // TODO: Implement actual graph operations
-    // This would be where you'd implement union, intersection, etc.
-    alert(`${operation} operation would be performed on ${selected.length} queries`);
+    
+    if (operation === 'connect') {
+      const paths = await performConnect(selected, (current, total) => {
+        if (onOperationComplete) {
+          onOperationComplete({
+            type: 'connect-progress',
+            progress: { current, total }
+          });
+        }
+      });
+      if (onOperationComplete) {
+        onOperationComplete({
+          type: 'connect',
+          paths,
+          label: `Connect: ${selected.map(q => q.name).join(' ⟷ ')}`,
+          sourceQueryIds: selected.map(q => q.id)
+        });
+      }
+      setSelectedQueries([]);
+      onClose();
+    } else {
+      const resultNodes = performSetOperation(operation, selected);
+      if (onOperationComplete) {
+        onOperationComplete({
+          type: operation,
+          nodes: resultNodes,
+          label: `${operation.toUpperCase()}: ${selected.map(q => q.name).join(` ${operation === 'union' ? '∪' : operation === 'intersect' ? '∩' : '−'} `)}`,
+          sourceQueryIds: selected.map(q => q.id)
+        });
+      }
+      setSelectedQueries([]);
+      onClose();
+    }
   };
 
   return (
@@ -66,12 +261,12 @@ const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => 
                 <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    checked={selectedQueries.size === savedQueries.length && savedQueries.length > 0}
+                    checked={selectedQueries.length === Math.min(2, savedQueries.length) && savedQueries.length > 0}
                     onChange={handleSelectAll}
                     className="rounded border-vercel-border text-vercel-black focus:ring-vercel-black"
                   />
                   <span className="text-xs font-mono text-vercel-black">
-                    {selectedQueries.size > 0 ? `${selectedQueries.size} selected` : 'Select queries'}
+                    {selectedQueries.length > 0 ? `${selectedQueries.length} selected` : 'Select queries'}
                   </span>
                 </div>
                 <button
@@ -90,7 +285,7 @@ const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => 
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => handleOperation('union')}
-                    disabled={selectedQueries.size < 2}
+                    disabled={selectedQueries.length < 2}
                     className="px-2 py-1 text-xs font-mono bg-white border border-vercel-border text-vercel-black rounded hover:bg-vercel-bg disabled:opacity-30 transition-colors"
                     title="Combine all selected queries"
                   >
@@ -98,7 +293,7 @@ const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => 
                   </button>
                   <button
                     onClick={() => handleOperation('intersect')}
-                    disabled={selectedQueries.size < 2}
+                    disabled={selectedQueries.length < 2}
                     className="px-2 py-1 text-xs font-mono bg-white border border-vercel-border text-vercel-black rounded hover:bg-vercel-bg disabled:opacity-30 transition-colors"
                     title="Find common elements in selected queries"
                   >
@@ -106,7 +301,7 @@ const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => 
                   </button>
                   <button
                     onClick={() => handleOperation('subtract')}
-                    disabled={selectedQueries.size < 2}
+                    disabled={selectedQueries.length < 2}
                     className="px-2 py-1 text-xs font-mono bg-white border border-vercel-border text-vercel-black rounded hover:bg-vercel-bg disabled:opacity-30 transition-colors"
                     title="Remove second query from first"
                   >
@@ -114,7 +309,7 @@ const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => 
                   </button>
                   <button
                     onClick={() => handleOperation('connect')}
-                    disabled={selectedQueries.size < 1}
+                    disabled={selectedQueries.length < 1}
                     className="px-2 py-1 text-xs font-mono bg-white border border-vercel-border text-vercel-black rounded hover:bg-vercel-bg disabled:opacity-30 transition-colors"
                     title="Find connections between queries"
                   >
@@ -131,18 +326,26 @@ const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => 
                   <div
                     key={query.id}
                     className={`border rounded p-3 transition-all ${
-                      selectedQueries.has(query.id)
+                      selectedQueries.includes(query.id)
                         ? 'border-vercel-black bg-vercel-bg'
                         : 'border-vercel-border hover:border-vercel-gray hover:bg-vercel-bg'
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedQueries.has(query.id)}
-                        onChange={() => handleQuerySelect(query.id)}
-                        className="mt-1 rounded border-vercel-border text-vercel-black focus:ring-vercel-black"
-                      />
+                      <div 
+                        onClick={() => handleQuerySelect(query.id)}
+                        className={`mt-1 w-4 h-4 rounded border cursor-pointer flex items-center justify-center ${
+                          selectedQueries.includes(query.id)
+                            ? 'bg-vercel-black border-vercel-black'
+                            : 'border-vercel-border hover:border-vercel-gray'
+                        }`}
+                      >
+                        {getSelectionLabel(query.id) && (
+                          <span className="text-[10px] font-bold text-white">
+                            {getSelectionLabel(query.id)}
+                          </span>
+                        )}
+                      </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
                           <h4 className="font-mono font-medium text-xs text-vercel-black truncate">{query.name}</h4>
@@ -195,10 +398,10 @@ const SavedQueries = ({ savedQueries, onLoadQuery, onDeleteQuery, onClose }) => 
 
       {/* Footer */}
       <div className="border-t border-vercel-border px-4 py-3 bg-vercel-bg">
-        <div className="flex justify-between items-center text-xs font-mono text-vercel-gray">
+        <div className="flex justify-between items-center text-xs font-mono text-white">
           <span>{savedQueries.length} saved queries</span>
-          {selectedQueries.size > 0 && (
-            <span className="text-vercel-black font-mono">{selectedQueries.size} selected</span>
+          {selectedQueries.length > 0 && (
+            <span className="text-white font-mono">{selectedQueries.length} selected</span>
           )}
         </div>
       </div>

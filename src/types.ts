@@ -139,6 +139,23 @@ export interface HistogramData {
   max: number;
 }
 
+// Base Graph Types (for set operators)
+export interface BaseGraph {
+  id: string;
+  type: 'union' | 'intersect' | 'subtract' | 'connect';
+  nodes: GraphNode[];
+  label: string;
+  sourceQueryIds?: number[];
+}
+
+export interface PathResult {
+  id: string;
+  startNode: GraphNode;
+  endNode: GraphNode;
+  path: Array<GraphNode | GraphLink>;
+  totalDistance: number;
+}
+
 // Component Props Types
 export interface AttributePanelProps {
   data: GraphNode[] | GraphLink[];

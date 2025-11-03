@@ -166,18 +166,12 @@ const TreemapView = ({
       // All node type rectangles in blue
       colorScale = () => defaultNodeColor;
     } else if (currentView === 'edgeTypes') {
-      console.log('[table-missing] D3: Rendering edgeTypes, edgeTypeSummary length:', edgeTypeSummary.length);
-      console.log('[table-missing] D3: edgeTypeSummary contents:', edgeTypeSummary);
-      console.log('[table-missing] D3: selectedNodeType:', selectedNodeType);
-      
       data = edgeTypeSummary.map(item => ({
         ...item,
         value: item.count,
         id: item.type,
         label: item.type
       }));
-      
-      console.log('[table-missing] D3: edgeTypes data array:', data);
       
       // Edge type rectangles all white
       colorScale = d3.scaleOrdinal(edgeShades);
@@ -191,8 +185,6 @@ const TreemapView = ({
         height: 25
       };
     } else if (currentView === 'specificNodes') {
-      console.log('[table-missing] D3: Rendering specificNodes, filteredNodes:', filteredNodes.length);
-      
       // Group nodes by type for treemap
       const nodesByType = {};
       filteredNodes.forEach(node => {
@@ -203,8 +195,6 @@ const TreemapView = ({
         nodesByType[nodeType].push(node);
       });
 
-      console.log('[table-missing] D3: nodesByType:', nodesByType);
-
       data = Object.entries(nodesByType).map(([nodeType, nodes]) => ({
         id: nodeType,
         label: nodeType,
@@ -212,8 +202,6 @@ const TreemapView = ({
         nodes: nodes,
         type: 'nodeType'
       }));
-      
-      console.log('[table-missing] D3: data array created:', data);
       
       // Specific nodes are still node groups: keep blue
       colorScale = () => defaultNodeColor;
@@ -229,11 +217,8 @@ const TreemapView = ({
     }
 
     if (data.length === 0) {
-      console.log('[table-missing] D3: No data to render, early return');
       return;
     }
-    
-    console.log('[table-missing] D3: Proceeding to render', data.length, 'items');
 
 
     // Create hierarchy
@@ -637,52 +622,22 @@ const TreemapView = ({
 
   const hasAnyNonLeafNodes = (nodes, edgeIdx) => {
     if (!nodes || nodes.length === 0 || !edgeIdx) {
-      console.log('[table-missing] hasAnyNonLeafNodes early return:', { 
-        hasNodes: !!nodes, 
-        nodeCount: nodes?.length || 0, 
-        hasEdgeIdx: !!edgeIdx 
-      });
       return false;
     }
     
     const result = nodes.some(node => {
       const outgoingEdges = edgeIdx.bySource?.get(node.id) || [];
-      console.log('[table-missing] Checking node:', { 
-        nodeId: node.id, 
-        nodeType: node['Node Type'], 
-        outgoingEdgeCount: outgoingEdges.length 
-      });
       return outgoingEdges.length > 0;
     });
     
-    console.log('[table-missing] hasAnyNonLeafNodes result:', result);
     return result;
   };
-
-  // Group filteredNodes by type for diagnostics
-  const nodeTypeBreakdown = {};
-  if (currentView === 'specificNodes' && filteredNodes.length > 0) {
-    filteredNodes.forEach(node => {
-      const type = node['Node Type'] || 'Unknown';
-      nodeTypeBreakdown[type] = (nodeTypeBreakdown[type] || 0) + 1;
-    });
-  }
-
-  console.log('[table-missing] Conditions check:', {
-    currentView,
-    filteredNodesLength: filteredNodes.length,
-    hasEdgeIndex: !!edgeIndex,
-    nodeTypeBreakdown
-  });
 
   const allNodesAreLeaves = currentView === 'specificNodes' && 
     filteredNodes.length > 0 && 
     !hasAnyNonLeafNodes(filteredNodes, edgeIndex);
 
-  console.log('[table-missing] allNodesAreLeaves:', allNodesAreLeaves);
-
   if (allNodesAreLeaves) {
-    console.log('[table-missing] Rendering TABLE view with', filteredNodes.length, 'nodes');
     const tableItems = filteredNodes.map(node => ({
       type: 'node',
       data: node
@@ -717,7 +672,6 @@ const TreemapView = ({
     );
   }
 
-  console.log('[table-missing] Rendering TREEMAP view');
 
   return (
     <div ref={containerRef} className="bg-white rounded shadow-sm border border-vercel-border p-3 h-full relative">
