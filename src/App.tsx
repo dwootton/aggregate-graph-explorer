@@ -1366,13 +1366,35 @@ function App() {
       <header className="bg-white border-b border-vercel-border">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-2">
-            <button 
-              onClick={resetQuery}
-              className="text-xl font-mono font-semibold text-vercel-black tracking-tight flex items-center gap-2 hover:opacity-70 transition-opacity"
-            >
-              INCREMENT
-              {/* <img src="/Vector.svg" alt="Increment" className="w-6 h-6" /> */}
-            </button>
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={resetQuery}
+                className="text-xl font-mono font-semibold text-vercel-black tracking-tight flex items-center gap-2 hover:opacity-70 transition-opacity"
+              >
+                INCREMENT
+                {/* <img src="/Vector.svg" alt="Increment" className="w-6 h-6" /> */}
+              </button>
+              <div className="text-xs font-mono text-vercel-gray">
+                Made by{' '}
+                <a 
+                  href="https://www.racquelfygenson.com" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="hover:text-vercel-black transition-colors"
+                >
+                  Racquel Fygenson
+                </a>
+                {' '}and{' '}
+                <a 
+                  href="https://x.com/WoottonDylan" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="hover:text-vercel-black transition-colors"
+                >
+                  Dylan Wootton
+                </a>
+              </div>
+            </div>
             <div className="flex items-center gap-4">
               <div className="text-xs font-mono text-vercel-gray">
                 {graphData.nodes?.length || 0} nodes · {graphData.links?.length || 0} edges
