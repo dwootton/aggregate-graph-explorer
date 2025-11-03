@@ -19,7 +19,7 @@ You don’t need to know the graph’s structure before you start. The interface
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/yourusername/increment.git
+git clone https://github.com/dwootton/increment.git
 cd increment
 npm install
 ```
@@ -59,56 +59,12 @@ INCREMENT expects graph data as JSON in the following format:
 }
 ```
 
-Place your graph data at `public/MC1_graph.json` or modify the data loading path in `src/App.tsx`.
+This repo ships with the sample data from the MC1 graph. You can replace it with your own graph data at `public/MC1_graph.json` or modify the data loading path in `src/App.tsx`.
 
 ## Architecture
 
 INCREMENT is built with React and D3.js. The application maintains navigation state through a query stack, allowing forward navigation through the graph and backward traversal through history. Filters are scoped to specific query steps, and the entire application state can be serialized to URLs for sharing.
 
-For larger datasets, INCREMENT supports a Cypher backend mode that compiles the incremental query pattern to Cypher queries and executes them against Neo4j. This provides the same interaction model with database-scale performance.
-
-The treemap visualization adapts to different views: node type distributions at the root level, edge type distributions when a node type is selected, and individual node tables when drilling into specific nodes. Attributes are shown contextually in the left panel, updating to reflect the current navigation state.
-
-## Optional: Neo4j Backend
-
-For large graphs, you can use INCREMENT with a Neo4j database:
-
-1. Install and start Neo4j
-2. Set environment variables:
-
-```bash
-export NEO4J_URI=bolt://localhost:7687
-export NEO4J_USER=neo4j
-export NEO4J_PASSWORD=your_password
-```
-
-3. Ingest your graph data:
-
-```bash
-npm run ingest:neo4j
-```
-
-4. Enable the Cypher backend:
-
-```bash
-export REACT_APP_USE_CYPHER_BACKEND=true
-export REACT_APP_NEO4J_URI=$NEO4J_URI
-export REACT_APP_NEO4J_USER=$NEO4J_USER
-export REACT_APP_NEO4J_PASSWORD=$NEO4J_PASSWORD
-npm start
-```
-
-INCREMENT will then compile queries to Cypher and execute them against Neo4j transparently.
-
-## Building for Production
-
-Create an optimized production build:
-
-```bash
-npm run build
-```
-
-The build artifacts will be in the `build/` directory, ready for deployment to any static hosting service.
 
 ## Contributing
 
@@ -116,12 +72,10 @@ Contributions are welcome. Please open an issue to discuss significant changes b
 
 ## Credits
 
-INCREMENT was created by [Racquel Fygenson](https://www.racquelfygenson.com) and [Dylan Wootton](https://x.com/WoottonDylan).
+INCREMENT was created by [Racquel Fygenson](https://www.racquelfygenson.com) and [Dylan Wootton](https://x.com/WoottonDylan) for their submission to the 2025 IEEE VAST Challenge.
 
 ## Questions or Feedback?
 
 For questions, bug reports, or feature requests, please contact [dwootton@mit.edu](mailto:dwootton@mit.edu).
 
----
-
-Built with React, D3.js, and Neo4j • Licensed under MIT
+Licensed under MIT
